@@ -8,6 +8,12 @@ variables:
   git_sha:
     description: "Git SHA of the deployed commit"
     default: "local"
+  catalog:
+    description: "Unity Catalog catalog name"
+    default: "mlops_dev"
+  schema:
+    description: "Unity Catalog schema name"
+    default: "chenheju"
 
 artifacts:
   default:

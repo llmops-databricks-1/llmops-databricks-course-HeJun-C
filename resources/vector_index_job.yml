@@ -1,0 +1,25 @@
+resources:
+  jobs:
+    vector_index_job:
+      name: vector-index-setup
+      tags:
+        project_name: "llmops-databricks-course-HeJun-C"
+
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+
+      tasks:
+        - task_key: setup_vector_search_index
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/setup_vector_search_index.py
+            base_parameters:
+              env: ${bundle.target}
+              git_sha: "${var.git_sha}"
+              run_id: "{{job.run_id}}"
+              catalog: "${var.catalog}"
+              schema: "${var.schema}"
+              vs_endpoint: "llmops_course_vs_endpoint"
+              embedding_model: "databricks-gte-large-en"

@@ -1,0 +1,38 @@
+resources:
+  jobs:
+    build_tables_workflow:
+      name: build-tables
+      tags:
+        project_name: "llmops-databricks-course-HeJun-C"
+
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - loguru
+
+      tasks:
+        - task_key: load_raw_data
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/load_raw_data.py
+            base_parameters:
+              env: ${bundle.target}
+              git_sha: "${var.git_sha}"
+              run_id: "{{job.run_id}}"
+              catalog: "${var.catalog}"
+              schema: "${var.schema}"
+
+        - task_key: prepare_metadata_knowledge
+          depends_on:
+            - task_key: load_raw_data
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/prepare_metadata_knowledge.py
+            base_parameters:
+              env: ${bundle.target}
+              git_sha: "${var.git_sha}"
+              run_id: "{{job.run_id}}"
+              catalog: "${var.catalog}"
+              schema: "${var.schema}"
