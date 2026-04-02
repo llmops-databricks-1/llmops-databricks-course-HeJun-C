@@ -2,8 +2,9 @@ import argparse
 import json
 import os
 
-from llmops_databricks_course_HeJun_C.mcp_genie import GenieMcpClient, GenieMcpConfig
 from dotenv import load_dotenv
+
+from llmops_databricks_course_HeJun_C.mcp_genie import GenieMcpClient, GenieMcpConfig
 
 
 def main() -> int:
@@ -48,4 +49,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

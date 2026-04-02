@@ -3,7 +3,7 @@ Managed MCP Ecosystem on Databricks
 The Model Context Protocol (MCP) is an open standard released by Anthropic in November 2024 that solves a fundamental problem: allowing AI agents access the data and tools they need in a standardized way without requiring custom integrations every time.
 Since its release, MCP adoption has grown fast and has become a standard for AI development. Almost any tool you can think of has MCP integration today: Hugging Face, GitHub, Postman, and many more.
 Under the Agents -> MCP Servers tab on Databricks workspace, you can find all available MCP servers. Some MCP servers appear there without any configuration from the user’s side (such as Unity Catalog Functions, Vector Search Index and Genie Space).That’s because all these functionalities are treated as Databricks-managed MCP by default.
-  
+
 
 Databricks provides the following managed servers:
 MCP Server
@@ -12,20 +12,20 @@ MCP Server
 	Available tools and parameters
 	Vector search index (VSI)
 	https://{host}/api/2.0/mcp/vector-search/{catalog}/{schema}
-	Query VSI to find relevant chunks. 
+	Query VSI to find relevant chunks.
 	{catalog}__{schema}__{index}: query(str)
 	Genie space
 	https://{host}/api/2.0/mcp/genie/{genie_space_id}
-	Query Genie space. 
-	query_space_{space_id}: query (str), conversation_id (str); 
-poll_response_{space_id}: conversation_id (str); message_id (str) 
+	Query Genie space.
+	query_space_{space_id}: query (str), conversation_id (str);
+poll_response_{space_id}: conversation_id (str); message_id (str)
 	Unity Catalog functions
 	https://{host}/api/2.0/mcp/functions/{catalog}/{schema}
 	Invoke unity catalog function
 	{catalog}__{schema}__{fn}; parameters are defined by users when functions get created
 	DBSQL
 	https://{host}/api/2.0/mcp/sql
-	Run AI-generated SQL. 
+	Run AI-generated SQL.
 	execute_sql: query(str);
 execute_sql_read_only: query(str);
 poll_sql_result: statement_id (str)
@@ -306,9 +306,9 @@ When saving, we append new messages to the session:
            raise
        except Exception as e:
            logger.warning(f"Failed to save session messages: {e}")
-We’ll use the LakebaseMemory class when defining the agent later in the course. 
+We’ll use the LakebaseMemory class when defining the agent later in the course.
 Lakebase Authentication using SPN
-Before we can proceed, we need to create a secret scope named admin. This scope will store the credentials of a service principal with account admin permissions, which are required to authenticate and generate a token to call to the Databricks Account API. 
+Before we can proceed, we need to create a secret scope named admin. This scope will store the credentials of a service principal with account admin permissions, which are required to authenticate and generate a token to call to the Databricks Account API.
 Do not run this code, the secret scope is already there!
 from databricks.sdk import WorkspaceClient
 from requests.auth import HTTPBasicAuth
@@ -364,7 +364,7 @@ except Exception:
    pass  # scope already exists
 w.secrets.put_secret(scope=scope_name, key="client_id", string_value=client_id)
 w.secrets.put_secret(scope=scope_name, key="client_secret", string_value=client_secret)
-Finally, let’s grant CAN_USE permissions for the database instance to the service principal and grant necessary Postgres-related permissions: 
+Finally, let’s grant CAN_USE permissions for the database instance to the service principal and grant necessary Postgres-related permissions:
 ws_token = w.tokens.create(lifetime_seconds=600).token_value
 requests.patch(
    f"{w.config.host}/api/2.0/permissions/database-instances/{instance_name}",
@@ -384,8 +384,8 @@ GRANT SELECT, INSERT ON public.session_messages TO "{client_id}";
 """
 If environment variables DATABRICKS_CLIENT_ID, DATABRICKS_CLIENT_SECRET and DATABRICKS_HOST are available, LakebaseMemory class will authenticate as SPN.
 Genie space
-Genie is a compound AI system that was created as a tool for business users to gain data insights by asking questions in natural language via user interface. 
-Genie translates natural language into SQL queries and generates an appropriate response using a compound AI system. Instead of relying on a single large model, it combines multiple specialized components working together. 
+Genie is a compound AI system that was created as a tool for business users to gain data insights by asking questions in natural language via user interface.
+Genie translates natural language into SQL queries and generates an appropriate response using a compound AI system. Instead of relying on a single large model, it combines multiple specialized components working together.
 Genie leverages several information sources: table schemas, column names and their descriptions, example SQL queries, custom instructions, and conversation history. You can enhance its accuracy by building a knowledge store with business context and relevant column values.
 While originally built for human interaction, Genie is now available via API, making it a powerful tool for AI agents.
 Vector Search vs. Genie
@@ -487,7 +487,7 @@ conversation = w.genie.start_conversation_and_wait(
    space_id=space.space_id,
    content="Find the last 10 papers published")
 We can inspect what the returned object looks like and notice that Genie translated the original question to a SQL query:
-  
+
 
 Let’s ask a question within the same conversation (Genie keeps the message history within the conversation), and request to return the list of authors of the last 10 publications:
 message = w.genie.create_message_and_wait(
@@ -495,7 +495,7 @@ message = w.genie.create_message_and_wait(
    conversation_id=conversation.conversation_id,
    content="Return the list of authors of the last 10 papers published")
 We can see that Genie was able to successfully answer the question:
-  
+
 
 Having established our Vector Search index for semantic retrieval and our Genie space for analytical queries, we now have the two foundational sources of context for our agent.
 

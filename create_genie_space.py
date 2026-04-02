@@ -1,5 +1,6 @@
 import json
 import uuid
+
 from databricks.sdk import WorkspaceClient
 
 PROFILE = "llmops-course"
@@ -56,20 +57,21 @@ space_def = {
                 {
                     "identifier": METADATA_KNOWLEDGE_TABLE,
                     "description": [
-                        "Project knowledge base: table descriptions, join logic, and business rules."
+                        "Project knowledge base: table descriptions, "
+                        "join logic, and business rules."
                     ],
                 },
             ],
             key=lambda x: x["identifier"],
         )
-    }
+    },
 }
 
 space = w.genie.create_space(
     warehouse_id=WAREHOUSE_ID,
     title="KKBox Genie Smoke Test",
     description="Minimal Genie space to test connection only",
-    serialized_space=json.dumps(space_def)
+    serialized_space=json.dumps(space_def),
 )
 
 print("Genie space created successfully.")

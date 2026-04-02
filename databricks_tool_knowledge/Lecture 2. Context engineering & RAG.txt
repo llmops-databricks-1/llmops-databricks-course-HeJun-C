@@ -6,8 +6,8 @@ In the course, we'll explore three core aspects of context engineering:
 2. MCP servers on Databricks: A standardized protocol for exposing tools and data sources to agents.
 3. Agent memory using Lakebase: Maintaining state and conversation history across interactions.
 This lecture covers the first part. Parts 2 and 3 (MCP servers, function calling, agent memory) will be covered in lecture 3.
-In the early days of AI engineering, it was all about prompt engineering. Even though efficient system prompts are still important today, with more complex systems it became much more than just about the prompt. Today, we need strategies to manage the entire context state that also includes external data, tools and message history. 
-  
+In the early days of AI engineering, it was all about prompt engineering. Even though efficient system prompts are still important today, with more complex systems it became much more than just about the prompt. Today, we need strategies to manage the entire context state that also includes external data, tools and message history.
+
 
 From Effective context engineering for AI agents by Anthropic.
 An agent running in a loop generates more and more data that could be relevant for the next turn of inference, and this information must be constantly refined to go into the limited context window - this is what modern context engineering is about.
@@ -130,7 +130,7 @@ if len(records) > 0:
    df.write.format("delta").mode("append").saveAsTable(f"{metadata_table}")
 After the papers are stored in the volume and all the metadata is stored in a delta table, we're going to tackle PDF processing - one of those problems that looks deceptively simple until you actually try to do it at scale.
 PDF parsing
-PDFs are everywhere in enterprise environments, and they're consistently one of the hardest data sources to work with reliably. That's because PDFs weren't designed for data extraction. They were designed to ensure the document looks exactly the same, does not matter where you view it or print it. 
+PDFs are everywhere in enterprise environments, and they're consistently one of the hardest data sources to work with reliably. That's because PDFs weren't designed for data extraction. They were designed to ensure the document looks exactly the same, does not matter where you view it or print it.
 PDFs are built for visual presentation but lack metadata to process content reliably. They may look organized on screen but are unstructured behind the scenes. It makes them incredibly frustrating when you need to extract structured data for processing, search, or feeding into your AI systems.
 You may find several options when it comes to PDF processing (including scanned documents): open-source projects like docling, or solutions provided by cloud vendors like AWS Textract and Azure Document Intelligence. Modern LLMs with vision capabilities can now process PDFs directly. Models like GPT-5, Claude Sonnet 4.5, and Gemini 3 Pro can see the document layout, understand context, handle both native text and scanned images, and extract structured data in a single pass.
 Databricks also provides an ai_parse_document function that significantly simplifies the PDF processing pipeline and handles all of this complexity behind the scenes, providing high accuracy for a competitive price. Let's see how it works in practice.
@@ -170,16 +170,16 @@ The output of the ai_parsed_document consists of elements (chunks) of the follow
 * table - Tables
 * text - Regular text content
 * title - Document title
-  
+
 
 Chunking
 Effective chunking is critical because it directly impacts the quality of information retrieved in response to user queries. To understand the impact of chunking, let’s inspect one of the documents. We are interested specifically in chunks with regular text content. The length of chunks varies, for example: 9% of chunks have <100 characters, 5% chunks have >1000 characters, 70% chunks have 100-500 characters.
-  
 
-The chunking has been done intelligently and mostly preserves the structure of the document making it a good enough starting point for indexing and usage later for retrieval. Overall, chunking matters more than most people realize as it directly impacts what gets retrieved when users ask questions. 
+
+The chunking has been done intelligently and mostly preserves the structure of the document making it a good enough starting point for indexing and usage later for retrieval. Overall, chunking matters more than most people realize as it directly impacts what gets retrieved when users ask questions.
 Chunking Strategies
 The simplest approach is splitting documents into equal-length chunks based on some unit, such as characters, words, sentences, or paragraphs. This performs reasonably well for many use cases but has a fundamental problem: it doesn't respect the structure of your content. For instance, a 2,048-character chunk might cut off mid-sentence, mid-paragraph, or right in the middle of a critical explanation. Context gets lost at the boundaries. One of the ways to solve it is using overlapping. If your chunks are 2,048 characters, you might use 200 characters of overlap. This ensures that information near chunk boundaries appears in at least one complete chunk. The downside: you're duplicating some content and increasing your index size.
-For arXiv papers, a recursive document splitting can be applied based on the maximum token size. Start by splitting at section boundaries (Abstract, Introduction, Methods, Results). If a section is too long, the logic further divides it by subsections, such as Data Collection, Model Architecture, or Training Procedure, and finally into individual paragraphs. This hierarchical approach preserves the document's logical structure and reduces the risk of arbitrarily breaking related content, ensuring that retrieved information remains contextually complete. 
+For arXiv papers, a recursive document splitting can be applied based on the maximum token size. Start by splitting at section boundaries (Abstract, Introduction, Methods, Results). If a section is too long, the logic further divides it by subsections, such as Data Collection, Model Architecture, or Training Procedure, and finally into individual paragraphs. This hierarchical approach preserves the document's logical structure and reduces the risk of arbitrarily breaking related content, ensuring that retrieved information remains contextually complete.
 Embedding Window Considerations
 When determining chunk size, you must consider the embedding window of your chosen  model. For instance, the Databricks GTE model has an embedding window of 8192 tokens, whereas the Databricks BGE Large model has an embedding window of 512 tokens. It’s important to distinguish between character counts and tokens. Tokens can represent words, sub-words, or punctuation depending on the model's tokenizer. For instance, the phrase "MLOps is awesome" contains 16 characters but is processed as only 3 tokens: [“MLOps”, “is”, “awesome”].
 Processing chunks
@@ -282,7 +282,7 @@ spark.sql(
    """
 )
 Vector search index
-At this point in the pipeline, we have arXiv papers stored as PDFs in volumes, their metadata in Delta tables, parsed content extracted via ai_parse_document, and chunks stored in a Delta table. Databricks provides Mosaic AI Vector Search functionality that allows to make this content searchable. 
+At this point in the pipeline, we have arXiv papers stored as PDFs in volumes, their metadata in Delta tables, parsed content extracted via ai_parse_document, and chunks stored in a Delta table. Databricks provides Mosaic AI Vector Search functionality that allows to make this content searchable.
 Vector search is fundamentally different from traditional search. Instead of matching keywords, it works with embeddings - mathematical representations of semantic content. Text with similar meanings produces similar vectors, even if the exact words are different.
 If we take scientific papers, researchers don't always use the same terminology. One paper might discuss "convolutional neural networks" while another talks about "CNNs" or "ConvNets." Vector search handles this naturally because it understands that these concepts are semantically related.
 Creating the Endpoint and Index
@@ -339,10 +339,10 @@ When the new data is available in the source table, we will have to run the sync
 index = vsc.get_index(index_name=vs_index_fullname)
 index.sync()
 Overall, use TRIGGERED mode unless you need fresh data within a few minutes. For lower latency requirements, CONTINUOUS mode ensures updates arrive within seconds.
-In the Catalog Explorer, you can view which Lakeflow Spark Declarative Pipeline is associated with the vector search index, along with its current status:  
+In the Catalog Explorer, you can view which Lakeflow Spark Declarative Pipeline is associated with the vector search index, along with its current status:
 It’s important to note that the create_delta_sync_index command does not just create the Vector Search Index, but also computes the embeddings. This allows us to query the index using natural language. The same model used to create the embeddings  is automatically applied to your query to retrieve the most relevant documents.
 It is also possible to bring your own embeddings. In this case, the source Delta table should contain pre-computed embeddings instead of text. While this offers more control, it also means you are responsible for generating the corresponding embeddings within your LLM application at query time. Figure below (from Databricks documentation) demonstrates differences between Databricks-managed and self-managed embedding workflows:
-  
+
 
 Querying and Retrieval Quality
 Mosaic AI Vector Search supports natural language queries. For the similarity_search function, we need to provide the following arguments:
@@ -367,19 +367,19 @@ results = index.similarity_search(
    reranker=DatabricksReranker(columns_to_rerank=["text", "title", "summary"])
    )
 Optimizing Search Quality
-To understand the impact of configuration changes, it is important to establish evaluation metrics and a test dataset. 
+To understand the impact of configuration changes, it is important to establish evaluation metrics and a test dataset.
 For a test dataset, you can use existing labeled query-answer pairs, generate synthetic test cases from your documents, or use LLM judges to assess quality without labels. Even a small synthetic dataset of 50 queries is enough to tell you whether hybrid search improves quality or whether reranking helps.
 When it comes to evaluation metrics, pick based on what failure looks like for your application. Once you have metrics aligned with your use case, you can systematically test configurations and know which changes actually improve retrieval quality.
 Key metrics include:
-* Recall@k: Measures how many relevant items were successfully retrieved. Critical for legal or financial use cases..  
+* Recall@k: Measures how many relevant items were successfully retrieved. Critical for legal or financial use cases..
 * Precision@k: Measures what percentage of retrieved items are actually relevant. Critical for technical support where only the best result matters.
 *  F1@k balances: Balances both precision and recall..
 Databricks guide on vector search retrieval quality outlines 8 main steps AI engineers should consider:
 1. Enable hybrid search: One-line code change may improve recall by catching both semantic and keyword matches, and improve precision for queries with specific terms.
-2. Use metadata filtering: Reduces the search space, improves recall within the filtered subset, and precision by eliminating irrelevant results. 
+2. Use metadata filtering: Reduces the search space, improves recall within the filtered subset, and precision by eliminating irrelevant results.
 3. Add reranking: Databricks built-in reranker is a great solution, but is not suitable for high QPS applications (>5 QPS without additional scaling) or applications with low latency requirements. In those scenarios, it might be a good idea to build a custom reranker that utilizes a model serving endpoint.
 4. Improve data preparation: Refine document parsing and chunking strategies.
-5. Query expansion: Generate multiple query variations to improve recall. 
+5. Query expansion: Generate multiple query variations to improve recall.
 6. Prompt optimization: Use automatic prompt optimization techniques to improve prompts used for data preparation or query rewriting.
 7. Adaptive retrieval strategies: Build agents that can reformulate queries or decide if retrieval is necessary.
 8. Embedding model finetuning: A final option if standard models do not provide satisfactory results, particularly for non-English languages.

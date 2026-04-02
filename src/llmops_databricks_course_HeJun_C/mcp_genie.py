@@ -7,9 +7,9 @@ server URL, so other modules (and future agents) can reuse it as a "tool".
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
-import time
 import os
+import time
+from dataclasses import dataclass
 from urllib.parse import urlparse
 
 from databricks.sdk import WorkspaceClient
@@ -24,7 +24,7 @@ def _space_id_from_server_url(server_url: str) -> str:
     return space_id
 
 
-def _joined_text(mcp_response) -> str:
+def _joined_text(mcp_response: object) -> str:
     # databricks_mcp responses contain a list of content blocks with .text
     return "".join(getattr(c, "text", "") for c in getattr(mcp_response, "content", []))
 
@@ -50,7 +50,7 @@ def _get_first(d: dict, *keys: str) -> str | None:
     return None
 
 
-def _extract_conversation_and_message_ids(response_dict: dict) -> tuple[str | None, str | None]:
+def _extract_ids(response_dict: dict) -> tuple[str | None, str | None]:
     conversation_id = _get_first(response_dict, "conversation_id", "conversationId")
     message_id = _get_first(response_dict, "message_id", "messageId")
     return conversation_id, message_id
@@ -82,22 +82,26 @@ class GenieMcpConfig:
         profile_env: str = "DATABRICKS_CONFIG_PROFILE",
         host_env: str = "DATABRICKS_HOST",
         token_env: str = "DATABRICKS_TOKEN",
-    ) -> "GenieMcpConfig":
+    ) -> GenieMcpConfig:
         server_url = os.environ.get(server_url_env, "").strip()
         if not server_url:
             raise ValueError(f"Missing {server_url_env} in environment")
         profile = os.environ.get(profile_env, "llmops-course").strip() or "llmops-course"
         host = (os.environ.get(host_env) or "").strip() or None
         token = (os.environ.get(token_env) or "").strip() or None
-        return GenieMcpConfig(server_url=server_url, profile=profile, host=host, token=token)
+        return GenieMcpConfig(
+            server_url=server_url, profile=profile, host=host, token=token
+        )
 
 
 class GenieMcpClient:
-    def __init__(self, config: GenieMcpConfig):
+    def __init__(self, config: GenieMcpConfig) -> None:
         self.config = config
         self.space_id = _space_id_from_server_url(config.server_url)
 
-        w = _workspace_client(profile=config.profile, host=config.host, token=config.token)
+        w = _workspace_client(
+            profile=config.profile, host=config.host, token=config.token
+        )
         self._mcp = DatabricksMCPClient(server_url=config.server_url, workspace_client=w)
 
         self.query_tool = f"query_space_{self.space_id}"
@@ -152,14 +156,14 @@ class GenieMcpClient:
     ) -> dict:
         """Query Genie and poll until completion (best-effort).
 
-        Returns a dict including the final polled response (or last response if timeout).
+        Returns a dict including the final polled response (or last if timeout).
         """
         initial = self.query(query, conversation_id=conversation_id)
         resp = initial.get("response", {})
         if not isinstance(resp, dict):
             return initial
 
-        conv_id, msg_id = _extract_conversation_and_message_ids(resp)
+        conv_id, msg_id = _extract_ids(resp)
         if not conv_id or not msg_id:
             return initial
 
@@ -181,4 +185,3 @@ class GenieMcpClient:
             "conversation_id": conv_id,
             "message_id": msg_id,
         }
-

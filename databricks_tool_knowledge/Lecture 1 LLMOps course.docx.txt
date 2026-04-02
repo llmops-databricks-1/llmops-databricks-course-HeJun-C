@@ -6,7 +6,7 @@ Serverless environments
 In our project, we use Python 3.12, which means we also need to have an environment that supports that Python version. In the course, we use CPU environment version 4, which comes with the following configurations:
 * Operating System: Ubuntu 24.04.2 LTS
 * Python: 3.12.3
-* Databricks Connect: 17 
+* Databricks Connect: 17
 * Scala: 2.13.16
 * JDK: 17
 Similar to runtimes, serverless environments come with pre-installed libraries. However, the library versions differ slightly between serverless environment 4 and runtime 17.3 LTS - something to watch for if your workflows switch between serverless and classic compute, as subtle version mismatches can cause unexpected behavior. We recommend installing your own versions of the libraries you need to ensure consistency across environments.
@@ -18,11 +18,11 @@ Usage policies can be created programmatically or through the UI, and permission
 
  A screenshot of a computer
 
-AI-generated content may be incorrect. 
+AI-generated content may be incorrect.
 
  A screenshot of a computer
 
-AI-generated content may be incorrect. 
+AI-generated content may be incorrect.
 
 ________________
 
@@ -208,10 +208,10 @@ ________________
 
 
 Databricks development tools
-There are four main local developer tools Databricks provides: Databricks CLI, Databricks Asset Bundles (or DABs), Databricks connect, and Databricks VS Code extension. 
+There are four main local developer tools Databricks provides: Databricks CLI, Databricks Asset Bundles (or DABs), Databricks connect, and Databricks VS Code extension.
 Databricks Command-Line Interface (CLI)
 Databricks CLI is a command line interface that allows you to interact with the Databricks platform. It is a very powerful tool with a large range of commands that cover similar functionality as Databricks Terraform modules and APIs.
-Databricks CLI should be used to authenticate towards Databricks from your local machine. So we need to start with installing it. Databricks provides a comprehensive documentation on how to do it on different OS. 
+Databricks CLI should be used to authenticate towards Databricks from your local machine. So we need to start with installing it. Databricks provides a comprehensive documentation on how to do it on different OS.
 Databricks CLI provides multiple authentication options. I do not recommend using personal access tokens (from a security perspective, this is not the best option). Instead, use user-to-machine authentication.
 For the workspace-level commands, use the following command to authenticate:
 databricks auth login --host <workspace-url>
@@ -225,7 +225,7 @@ auth_type = databricks-cli
 
 The profiles are used to authenticate with Databricks when using developer tools.
 Databricks Asset Bundles
-You may have noticed that the repository contains the databricks.yml file. This is the Databricks Asset Bundle configuration file, which must be located in the root of the bundle project folder. 
+You may have noticed that the repository contains the databricks.yml file. This is the Databricks Asset Bundle configuration file, which must be located in the root of the bundle project folder.
 
 
 At its core, Databricks Asset Bundles (DABs) enable you to manage Databricks projects through an infrastructure-as-code (IaC) approach. Using the databricks.yml file, you can define the artifacts and resources your project requires.
@@ -274,7 +274,7 @@ artifacts:
    path: .
 
 
-For now, only the dev target is relevant. It is set as the default, which means it will be used whenever no target is specified when running databricks bundle CLI commands (which we’ll cover next). 
+For now, only the dev target is relevant. It is set as the default, which means it will be used whenever no target is specified when running databricks bundle CLI commands (which we’ll cover next).
 
 
 targets:
@@ -294,7 +294,7 @@ The development mode specified for the target enables the following behaviour:
 * It adds [dev ${workspace.current_user.short_name}] prefix to all resource names and tags each job with a dev Databricks tag.
 * It allows you to override job clusters (which is not allowed in production mode).
 * It pauses all schedules and triggers
-* It enables concurrent runs on all deployed jobs and disables the deployment lock for faster iteration. 
+* It enables concurrent runs on all deployed jobs and disables the deployment lock for faster iteration.
 * The bundle's root path must be under the user's home directory.
 
 
@@ -317,13 +317,13 @@ It’s important to pay attention to authentication when using DABs, specificall
 3. Configuration profile field values within the .databrickscfg file.
 If you happen to have an environment variable set up, it may mess up with authentication.
 Databricks Connect
-Databricks connect is a Python package that allows you to trigger an execution of spark code on a Databricks cluster from a local environment. 
+Databricks connect is a Python package that allows you to trigger an execution of spark code on a Databricks cluster from a local environment.
 We already went through the pyproject.toml setup and uv. From the project folder in a terminal, you can run:
 
 
 uv sync –extra dev
 source .venv/bin/activate (or an alternative command if you use WIndows)
-python 
+python
 
 
 The uv sync command will create a virtual environment, which we activate after. Let’s notice again that we use Python 3.12 and databricks-connect version 17.3.x — to match the runtime. With the Python command, we got into the Python console. Let’s try to run some commands using serverless cluster (an interactive cluster can also be used by providing the cluster ID instead):
@@ -351,7 +351,7 @@ It may be surprising, but it is also possible to import pyspark – even though 
 
  A screenshot of a computer
 
-AI-generated content may be incorrect. 
+AI-generated content may be incorrect.
 
 
 
@@ -361,7 +361,7 @@ It is because pyspark is “hidden” and embedded into databricks-connect (and 
 You can see it by going to .venv/lib/python3.12/site-packages:
 
 
-  
+
 
 
 
@@ -376,7 +376,7 @@ df = spark.read.table("samples.nyctaxi.trips")
 df.show(5)
 
 
-Import works without issues (because pyspark is installed), but when we try to run the second line, we get the RuntimeError: “Only remote Spark sessions using Databricks Connect are supported. Use DatabricksSession.builder to create a remote Spark session instead.” 
+Import works without issues (because pyspark is installed), but when we try to run the second line, we get the RuntimeError: “Only remote Spark sessions using Databricks Connect are supported. Use DatabricksSession.builder to create a remote Spark session instead.”
 The same command does work in the VS Code extension, however, because the extension automatically injects the required connection details through a .databricks.env file it creates inside the .databricks folder of your project. It contains the following environment variables:
 * DATABRICKS_AUTH_TYPE
 * DATABRICKS_BUNDLE_TARGET
@@ -399,21 +399,21 @@ After the extension is installed, follow these steps:
 5. Choose serverless compute option.
 
 
-Let’s create a demo.py file (the same code we tried to run from a terminal) and add the “# Databricks notebook source” so that the code can be recognized as a notebook. The cells are delimited by a line containing “# COMMAND — — — — — “. 
+Let’s create a demo.py file (the same code we tried to run from a terminal) and add the “# Databricks notebook source” so that the code can be recognized as a notebook. The cells are delimited by a line containing “# COMMAND — — — — — “.
 
 
  A screenshot of a computer
 
-AI-generated content may be incorrect. 
+AI-generated content may be incorrect.
 
 
 
 This works because the extension created configuration in the .vscode folder (settings.json):
-{     "jupyter.interactiveWindow.cellMarker.codeRegex": 
+{     "jupyter.interactiveWindow.cellMarker.codeRegex":
       "^# COMMAND ----------|^# Databricks notebook source|^(#\\s*%%|#\\s*\\<codecell\\>|#\\s*In\\[\\d*?\\]|#\\s*In\\[ \\])",
       "jupyter.interactiveWindow.cellMarker.default":
       "# COMMAND ----------" }
-We can run the code interactively by clicking Run Cell. 
+We can run the code interactively by clicking Run Cell.
 However, some code can only run in a Databricks environment. For example, the databricks-feature-engineering package is not supported locally, and some Delta table commands will fail outside Databricks. Secondly, even if you use PySpark for preprocessing, most machine learning libraries require pandas (or sometimes Polars) DataFrames as input for training. Both pandas and Polars compute on a single node, which means that even in a Databricks environment you are not directly leveraging the distributed power of Spark. The advantage, however, is that you can attach your notebook to a larger cluster with more memory. If you run the same code locally, it will use your laptop’s memory, and you can’t easily scale that up.
 Let’s explore how to make notebooks available in the Databricks workspace and execute them there instead.
 The Databricks VS Code extension allows you to sync the entire project to the workspace. After clicking Sync in the Remote Folder tab, the extension runs the databricks sync <folder> /Users/<user_name>/<folder> --watch command in the background. As a result, any local changes are automatically reflected in the workspace without requiring manual synchronization.
@@ -446,7 +446,7 @@ dependencies:
 Figure below demonstrates how this environment can be set as the workspace base environment via the Workspace Compute settings (workspace admins have the required permissions to do so). The Compute settings also allow you to configure a default package repository, which is useful when your organization uses JFrog or another private package repository:
  A screenshot of a computer
 
-AI-generated content may be incorrect. 
+AI-generated content may be incorrect.
 
 
 
@@ -460,9 +460,9 @@ Working with foundation models on Databricks gives you significant flexibility. 
 Regardless of which option you choose, all models use Mosaic AI Model Serving, which follows the OpenAI API specification. It supports three endpoint types:
 * llm/v1/chat (corresponding to the OpenAI Chat Completions API);
 * llm/v1/embeddings (corresponding to the OpenAI Embeddings API);
-* llm/v1/completions (following the legacy OpenAI Completions API). 
+* llm/v1/completions (following the legacy OpenAI Completions API).
 This unified interface lets you query foundation models the same way, regardless of the provider or where the model is hosted. This consistency makes it much easier to experiment with different models, perform evaluations, or enable fallback strategies. You can even use an OpenAI client to interact with foundation models on Databricks. Note that at the time of writing, the responses API is only supported for Databricks-hosted OpenAI closed-sourced foundation models.
-Here is an example of how we can interact with the databricks-gpt-oss-120b model: 
+Here is an example of how we can interact with the databricks-gpt-oss-120b model:
 from databricks.sdk import WorkspaceClient
 from openai import OpenAI
 
@@ -488,31 +488,31 @@ response = client.chat.completions.create(
 Another benefit of using foundation models on Databricks is the AI Gateway. Gateway can be applied to any Mosaic AI Model Serving endpoint, including foundation model APIs. You can also enable AI Guardrails to ensure personally identifiable information (PII) data is deleted or masked and harmful content is blocked, for both model input and output.
  A diagram of a software flowchart
 
-AI-generated content may be incorrect. 
+AI-generated content may be incorrect.
 
 Foundation model APIs can also be used in batch mode using ai_query (see the Databricks documentation on AI functions). Some Databricks-hosted models are optimized for batch processing, but ai_query works for any endpoint deployed through Mosaic AI model serving.
 As mentioned earlier, Databricks offers three hosting options for foundation models, let’s discuss them in detail.
 Databricks-hosted (Pay-per-Token)
-These models are ideal for experimentation and exploration as they require no additional configuration or upfront infrastructure commitment. Model availability in your workspace depends on your cloud provider and region (see AWS and Azure documentation for details). However, they are subject to workspace-level rate limits in input/output tokens and queries per hour. The most restrictive rate limit applies at any given time; if reached, you will receive a 429 error until the window resets. 
+These models are ideal for experimentation and exploration as they require no additional configuration or upfront infrastructure commitment. Model availability in your workspace depends on your cloud provider and region (see AWS and Azure documentation for details). However, they are subject to workspace-level rate limits in input/output tokens and queries per hour. The most restrictive rate limit applies at any given time; if reached, you will receive a 429 error until the window resets.
 Provisioned Throughput
-Recommended for production, these endpoints provide performance guarantees. You can deploy models behind provisioned throughput endpoints directly from the system.ai schema. You can also bring your own model (perhaps one you've fine-tuned) from sources like Hugging Face. For the latter approach, you'll need to log the model using MLflow (using the transformers flavor) and register it in Unity Catalog. It’s important to note that provisioned throughput works only for selected foundation model families and for specific runtime configurations (size and context window) that Databricks has tuned and supports. You can find supported models in this documentation. If you choose to bring your own model and its metadata falls outside supported ranges, the provisioned throughput endpoint creation will fail (source). 
+Recommended for production, these endpoints provide performance guarantees. You can deploy models behind provisioned throughput endpoints directly from the system.ai schema. You can also bring your own model (perhaps one you've fine-tuned) from sources like Hugging Face. For the latter approach, you'll need to log the model using MLflow (using the transformers flavor) and register it in Unity Catalog. It’s important to note that provisioned throughput works only for selected foundation model families and for specific runtime configurations (size and context window) that Databricks has tuned and supports. You can find supported models in this documentation. If you choose to bring your own model and its metadata falls outside supported ranges, the provisioned throughput endpoint creation will fail (source).
 Measuring Capacity: Tokens per Second
 For some models, provisioned throughput is expressed in tokens per second (input and output tokens combined), rather than requests per second. Since LLM requests vary widely in token lengths, requests per second is no longer a reliable measure of capacity. For example, if a request requires 2048 input tokens and 256 output tokens (2304 tokens total), a provisioned throughput of 2304 tokens per second allows the endpoint to process one such request per second. If you increase this to 4608 tokens per second, the endpoint can process two such requests per second, with each request still taking roughly one second to complete.
 Autoscaling and Performance
-Limits for provisioned throughput endpoints can be configured much higher than those for Databricks-hosted foundation models, and autoscaling adjusts capacity dynamically based on application demand. 
-For example, consider the meta_llama_v3_1_8b_instruct model: 
+Limits for provisioned throughput endpoints can be configured much higher than those for Databricks-hosted foundation models, and autoscaling adjusts capacity dynamically based on application demand.
+For example, consider the meta_llama_v3_1_8b_instruct model:
 * Its minimum band size is 9,500 tokens per second, which corresponds to four provisioned concurrency units.
 * If the system detects a demand of 15,000 tokens per second while operating at four units, it will scale up to eight units.
 * This increases the available throughput to approximately 19,000 tokens per second to meet the higher load.
 Optimizing LLM inference performance is not an easy task, and GPU autoscaling is slower than CPU autoscaling for regular model serving endpoints.  Databricks recommends conducting benchmarking to choose the correct range of tokens per second. It is possible to scale the endpoint to 0 to avoid unnecessary costs, but it is not recommended for production environments.
 For other models, provisioned throughput is expressed in model units, which is an abstraction layer on top of tokens per second.  For the Llama 4 Maverick model, for example, 50 model units means approximately 3250 tokens per second.
 External models
-External models are hosted outside of Databricks, which means you may need to configure firewall rules to access them (AWS). Various providers are supported, and you can also use custom providers as long as their APIs are OpenAI-compatible. 
+External models are hosted outside of Databricks, which means you may need to configure firewall rules to access them (AWS). Various providers are supported, and you can also use custom providers as long as their APIs are OpenAI-compatible.
 Even though you could access external models directly from the agent logic (given that the secrets are configured and the networking is resolved), creating a serving endpoint that accesses an external model is a good idea because of the benefits mentioned above, specifically around governance.
 The custom provider option can also be used when you need to use functionality, such as those offered by OpenAI, that are not yet covered by out-of-the-box solutions. For instance, while Databricks’ existing OpenAI external model serving options currently support text and image inputs with text-only outputs, the “Custom Provider” solution enables support for image as output (encoded as base64) use cases through Databricks. Solution architects from Databricks Sara Dooley and Austin Zaccor wrote a blog explaining how to achieve it.
 Types of foundation models
 Foundation models on Databricks are categorized into four functional types to help you select the most effective tool for your specific application:
-* General purpose: These models are fine-tuned on large datasets of human dialogue, which enables them to generate contextually relevant responses in multi-turn conversations. They are ideal for use cases such as customer support, virtual assistants, interactive tutoring systems. 
+* General purpose: These models are fine-tuned on large datasets of human dialogue, which enables them to generate contextually relevant responses in multi-turn conversations. They are ideal for use cases such as customer support, virtual assistants, interactive tutoring systems.
 * Embedding: These  models transform complex data, such as text, images, or audio, into embeddings that capture the essential features and relationships within the data. They are recommended for applications that require semantic understanding, similarity comparison, and efficient retrieval or clustering of complex data.
 * Vision: Designed to analyze visual data, these models are used for object recognition and image classification. Note that while they accept image inputs, standard configurations typically produce text outputs unless using a Custom Provider setup.
 * Reasoning: These models excel at breaking down complex tasks, and explaining their decision-making process. They are best suited for  content creation, summarization, and agent orchestration.
