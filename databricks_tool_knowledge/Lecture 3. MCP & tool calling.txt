@@ -1,0 +1,503 @@
+﻿Lecture 3. MCP & tool calling
+Managed MCP Ecosystem on Databricks
+The Model Context Protocol (MCP) is an open standard released by Anthropic in November 2024 that solves a fundamental problem: allowing AI agents access the data and tools they need in a standardized way without requiring custom integrations every time.
+Since its release, MCP adoption has grown fast and has become a standard for AI development. Almost any tool you can think of has MCP integration today: Hugging Face, GitHub, Postman, and many more.
+Under the Agents -> MCP Servers tab on Databricks workspace, you can find all available MCP servers. Some MCP servers appear there without any configuration from the user’s side (such as Unity Catalog Functions, Vector Search Index and Genie Space).That’s because all these functionalities are treated as Databricks-managed MCP by default.
+  
+
+Databricks provides the following managed servers:
+MCP Server
+	URL pattern
+	Description
+	Available tools and parameters
+	Vector search index (VSI)
+	https://{host}/api/2.0/mcp/vector-search/{catalog}/{schema}
+	Query VSI to find relevant chunks. 
+	{catalog}__{schema}__{index}: query(str)
+	Genie space
+	https://{host}/api/2.0/mcp/genie/{genie_space_id}
+	Query Genie space. 
+	query_space_{space_id}: query (str), conversation_id (str); 
+poll_response_{space_id}: conversation_id (str); message_id (str) 
+	Unity Catalog functions
+	https://{host}/api/2.0/mcp/functions/{catalog}/{schema}
+	Invoke unity catalog function
+	{catalog}__{schema}__{fn}; parameters are defined by users when functions get created
+	DBSQL
+	https://{host}/api/2.0/mcp/sql
+	Run AI-generated SQL. 
+	execute_sql: query(str);
+execute_sql_read_only: query(str);
+poll_sql_result: statement_id (str)
+	Known limitations for vector search index is that only indexes with Databricks managed embeddings are supported. Extra parameters such as query type, reranker, filters are not supported out of the box.
+It’s also possible to create an external MCP server on Databricks via Databricks Marketplace or HTTP connection, creating a governance layer on top, handling authentication and access.
+Implementing Tool Calling
+Let’s dive into how the MCP servers on Databricks can be used. Let’s start by defining a Pydantic BaseModel class that represents tool for an agent:
+from collections.abc import Callable
+from pydantic import BaseModel
+
+
+class ToolInfo(BaseModel):
+   name: str
+   spec: dict
+   exec_fn: Callable
+Tools defined in Databricks MCPs can be called using the DatabricksMCPClient. To initialize it, we need to provide a server url and a WorkspaceClient object. Here, we create a function create_managed_exec_fn which is a wrapper around tool calling:
+from databricks.sdk import WorkspaceClient
+from databricks_mcp import DatabricksMCPClient
+
+
+def create_managed_exec_fn(
+   server_url: str, tool_name: str, w: WorkspaceClient
+) -> Callable:
+   def exec_fn(**kwargs):
+       client = DatabricksMCPClient(server_url=server_url, workspace_client=w)
+       response = client.call_tool(tool_name, kwargs)
+       return "".join([c.text for c in response.content])
+   return exec_fn
+Finally, we implement create_mcp_tools function, which takes a list of MCP server URLs and a WorkspaceClient as arguments, and returns the list of ToolInfo objects defined earlier. The function must be declared as async because DatabricksMCPClient exposes an asynchronous API. MCP clients are asynchronous by design because the problems they solve, like tool use, context gathering and model coordination, are inherently I/O-bound, multi-step, and latency-sensitive. Async isn’t an implementation detail; it’s what makes MCP practical at scale:
+async def create_mcp_tools(w: WorkspaceClient,
+                           url_list: list[str]) -> list[ToolInfo]:
+   tools = []
+   for server_url in url_list:
+       mcp_client = DatabricksMCPClient(server_url=server_url, workspace_client=w)
+       mcp_tools = mcp_client.list_tools()
+       for tool in mcp_tools:
+           input_schema = tool.inputSchema.copy() if mcp_tool.inputSchema else {}
+           tool_spec = {
+               "type": "function",
+               "function": {
+                   "name": tool.name,
+                   "parameters": input_schema,
+                   "description": tool.description or f"Tool: {tool.name}",
+               },
+           }
+           exec_fn = create_managed_exec_fn(server_url, tool.name, w)
+           tools.append(ToolInfo(name=tool.name, spec=tool_spec, exec_fn=exec_fn))
+   return tools
+The code above is defined under the mcp module of the arxiv_curator package in the src folder. We’ll use the create_mcp_tools function later when we define our agent.
+Agent memory with Lakebase
+We've covered how agents access external data and how MCP servers expose tools in a standardized way. But there's a third piece: maintaining state across turns within a session.
+When you deploy an agent behind a serving endpoint, the agent is decoupled from its caller. Each request arrives independently, and the agent has no built-in way to know this is turn five of an ongoing conversation. Yet the user expects continuity. They ask about their recent order, then follow up with "can you change the shipping address?" The agent needs to know which order they mean.
+Session persistence solves this. The caller passes a session identifier with each request, and the agent uses it to retrieve and update the conversation state. This keeps the agent stateless at the infrastructure level while maintaining conversational context where it matters.
+This is where Lakebase comes in. Lakebased can be used in MLOps for feature serving and model serving with feature lookup. But Lakebase isn't limited to ML workflows: it's a fully managed Postgres database, which makes it a natural fit for storing agent session state as well. Let's walk through the basic pattern: storing messages and retrieving them by session ID.
+We'll start by creating a Lakebase instance with the smallest available capacity using the workspace client. Important to note that you can stop the instance when not in use to avoid unnecessary costs. We also provide the usage policy ID so that we can track costs associated with the Lakebase instance later:
+import json
+import urllib.parse
+from uuid import uuid4
+
+
+from databricks.sdk import WorkspaceClient
+from databricks.sdk.service.database import DatabaseInstance
+from loguru import logger
+
+
+from arxiv_curator.config import ProjectConfig
+
+
+cfg = ProjectConfig.from_yaml("../project_config.yml")
+
+
+w = WorkspaceClient()
+
+
+instance_name = "arxiv-agent-instance"
+
+
+try:
+   instance = w.database.get_database_instance(instance_name)
+except Exception:
+   instance = w.database.create_database_instance(
+       DatabaseInstance(name=instance_name,
+                        capacity="CU_1",
+                        usage_policy_id=cfg.usage_policy_id)
+   )
+From the instance object, we can retrieve databricks host which is required to create connection:
+lakebase_host = instance.response.read_write_dns
+We can use the workspace client again to generate the database credentials and construct the connection string:
+user = w.current_user.me()
+username = urllib.parse.quote_plus(user.user_name)
+
+
+# Generate database credential token
+pg_credential = w.database.generate_database_credential(
+   request_id=str(uuid4()),
+   instance_names=[instance_name]
+)
+
+
+conn_string = (
+   f"postgresql://{username}:{pg_credential.token}@{lakebase_host}:5432/"
+   "databricks_postgres?sslmode=require"
+)
+Since Lakebase is a Postgres database, we can utilize standard Python libraries to interact with it. To handle database interactions, we employ psycopg3, the modern PostgreSQL adapter for Python. We use this connection to initialize a table for storing session-based conversation messages:
+import psycopg
+
+
+with psycopg.connect(conn_string) as conn:
+   # Create session_messages table
+   conn.execute("""
+       CREATE TABLE IF NOT EXISTS session_messages (
+           id SERIAL PRIMARY KEY,
+           session_id TEXT NOT NULL,
+           message_data JSONB NOT NULL,
+           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+       )
+   """)
+   conn.execute("""
+       CREATE INDEX IF NOT EXISTS idx_session_messages_session_id
+       ON session_messages(session_id)
+   """)
+
+
+After the table is created, we can insert messages into it:
+
+
+test_session_id = f"test-session-{uuid4()}"
+test_messages = [
+   {"role": "user", "content": "Hello, what can you help me with?"},
+   {"role": "assistant", "content": "I can help you find research papers."},
+   {"role": "user", "content": "Find papers about LLM reasoning"},
+]
+
+
+with psycopg.connect(conn_string) as conn:
+   for msg in test_messages:
+       conn.execute(
+           "INSERT INTO session_messages (session_id, message_data) "
+           "VALUES (%s, %s)",
+           (test_session_id, json.dumps(msg)),
+       )
+
+
+And then we can successfully read them back:
+
+
+with psycopg.connect(conn_string) as conn:
+   result = conn.execute(
+       """
+       SELECT message_data, created_at FROM session_messages
+       WHERE session_id = %s
+       ORDER BY created_at ASC
+       """,
+       (test_session_id,),
+   ).fetchall()
+
+
+   logger.info(f"Loaded {len(result)} messages:")
+   for row in result:
+       logger.info(f"  [{row[1]}] {row[0]}")
+
+
+This mechanism can be used by the agent to load the messages from Lakebase when it receives a request, and store messages before it generates output.
+In the memory module of our custom package, we define the LakebaseMemory class that allows us to interact with Lakebase and uses a connection pool instead of a single connection. A connection pool maintains a set of reusable database connections. Instead of creating and closing a connection for every request, connections are borrowed from the pool and returned after use. This reduces overhead, improves performance, and allows the system to handle concurrent requests more efficiently, especially important for agent workloads.
+Let's look at a LakebaseMemory class defined under the memory module that handles session persistence. We'll walk through it step by step.
+The class takes a host and instance name at initialization, but doesn't connect to Lakebase instance immediately, the connection pool will be created on first use:
+import json
+import os
+import urllib.parse
+from typing import Any
+from uuid import uuid4
+
+
+import psycopg
+from databricks.sdk import WorkspaceClient
+from loguru import logger
+from psycopg_pool import ConnectionPool
+
+
+
+
+class LakebaseMemory:
+   """Handles session message persistence using Lakebase (PostgreSQL)."""
+
+
+   def __init__(
+       self,
+       host: str,
+       instance_name: str,
+   ):
+       self.host = host
+       self.instance_name = instance_name
+       self._pool: ConnectionPool | None = None
+Connecting to Lakebase requires exchanging Databricks credentials for a short-lived database token. The class supports two authentication modes, using service principal for production and user credentials for local testing:
+   def _get_connection_string(self) -> str:
+       """Build connection string for Lakebase.
+
+
+       Supports two authentication modes:
+       - SPN (production): Set DATABRICKS_CLIENT_ID, DATABRICKS_CLIENT_SECRET, DATABRICKS_HOST
+       - User (local testing): Uses default WorkspaceClient auth (e.g., ~/.databrickscfg)
+       """
+       w = WorkspaceClient()
+
+
+       # Determine username based on auth type
+       client_id = os.environ.get("DATABRICKS_CLIENT_ID")
+       if client_id:
+           # SPN authentication
+           username = client_id
+       else:
+           # User authentication (local testing)
+           user = w.current_user.me()
+           username = urllib.parse.quote_plus(user.user_name)
+
+
+       # Exchange auth for a short-lived Lakebase database token
+       pg_credential = w.database.generate_database_credential(
+           request_id=str(uuid4()), instance_names=[self.instance_name]
+       )
+
+
+       return (
+           f"postgresql://{username}:{pg_credential.token}@{self.host}:5432/"
+           "databricks_postgres?sslmode=require"
+       )
+The connection pool is created on the first use with the _get_pool function. Since database tokens are short-lived, connections can fail when credentials expire. The _reset_pool method handles this. If we hit an OperationalError, we close the pool so the next request gets fresh tokens:
+   def _get_pool(self) -> ConnectionPool:
+       """Get or create connection pool."""
+       if self._pool is None:
+           conn_string = self._get_connection_string()
+           self._pool = ConnectionPool(conninfo=conn_string, min_size=1, max_size=5)
+       return self._pool
+
+
+   def _reset_pool(self) -> None:
+       """Reset pool to force new credentials on next use."""
+       if self._pool is not None:
+           self._pool.close()
+           self._pool = None
+The core functionality is straightforward: load and save messages by session ID. When loading, we retrieve all messages for a session ordered by timestamp:
+   def load_messages(self, session_id: str) -> list[dict[str, Any]]:
+       """Load previous messages for a session."""
+       try:
+           with self._get_pool().connection() as conn:
+               self._ensure_messages_table(conn)
+               result = conn.execute(
+                   """
+                   SELECT message_data FROM session_messages
+                   WHERE session_id = %s
+                   ORDER BY created_at ASC
+                   """,
+                   (session_id,),
+               ).fetchall()
+               return [row[0] for row in result]
+       except psycopg.OperationalError:
+           self._reset_pool()
+           raise
+       except Exception as e:
+           logger.warning(f"Failed to load session messages: {e}")
+           return []
+When saving, we append new messages to the session:
+   def save_messages(
+       self, session_id: str, messages: list[dict[str, Any]]
+   ) -> None:
+       """Append messages to a session."""
+       try:
+           with self._get_pool().connection() as conn:
+               self._ensure_messages_table(conn)
+               for msg in messages:
+                   conn.execute(
+                       "INSERT INTO session_messages (session_id, message_data) "
+                       "VALUES (%s, %s)",
+                       (session_id, json.dumps(msg)),
+                   )
+       except psycopg.OperationalError:
+           self._reset_pool()
+           raise
+       except Exception as e:
+           logger.warning(f"Failed to save session messages: {e}")
+We’ll use the LakebaseMemory class when defining the agent later in the course. 
+Lakebase Authentication using SPN
+Before we can proceed, we need to create a secret scope named admin. This scope will store the credentials of a service principal with account admin permissions, which are required to authenticate and generate a token to call to the Databricks Account API. 
+Do not run this code, the secret scope is already there!
+from databricks.sdk import WorkspaceClient
+from requests.auth import HTTPBasicAuth
+
+
+w = WorkspaceClient()
+
+
+client_id = "your client id"
+client_secret = "your client secret"
+account_id = "your account id"
+
+
+w.secrets.create_scope(scope="admin")
+w.secrets.put_secret(scope="admin", key="client_id", string_value=client_id)
+w.secrets.put_secret(scope="admin", key="client_secret", string_value=client_secret)
+w.secrets.put_secret(scope="admin", key="account_id", string_value=account_id)
+
+
+Let’s generate account-level token:
+import requests
+from requests.auth import HTTPBasicAuth
+
+
+admin_client_id = dbutils.secrets.get("admin", "client_id")
+admin_client_secret = dbutils.secrets.get("admin", "client_secret")
+account_id = dbutils.secrets.get("admin", "account_id")
+
+
+account_host = "https://accounts.cloud.databricks.com"
+
+
+token = requests.post(
+   f"{account_host}/oidc/accounts/{account_id}/v1/token",
+   auth=HTTPBasicAuth(admin_client_id, admin_client_secret),
+   data={"grant_type": "client_credentials", "scope": "all-apis"}
+).json()["access_token"]
+We can now create an OAuth secret for the service principal - this is the credential that will be used by the agent to authenticate. When creating the secret, you can optionally specify its lifetime in seconds. If this parameter is not provided, the secret defaults to a lifetime of 730 days. In our case, we haven’t specified a lifetime, but it’s useful to know that this option is available for stricter security controls:
+sp = w.service_principals.create(display_name="lakebase-sp-arxiv")
+secret_resp = requests.post(
+   f"{account_host}/api/2.0/accounts/{account_id}/servicePrincipals/\
+{sp.id}/credentials/secrets",
+   headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+)
+secret_resp.raise_for_status()
+client_id = sp.application_id
+client_secret = secret_resp.json()["secret"]
+We can now store the secrets in the secret scope:
+scope_name = "arxiv-agent-scope"
+try:
+   w.secrets.create_scope(scope=scope_name)
+except Exception:
+   pass  # scope already exists
+w.secrets.put_secret(scope=scope_name, key="client_id", string_value=client_id)
+w.secrets.put_secret(scope=scope_name, key="client_secret", string_value=client_secret)
+Finally, let’s grant CAN_USE permissions for the database instance to the service principal and grant necessary Postgres-related permissions: 
+ws_token = w.tokens.create(lifetime_seconds=600).token_value
+requests.patch(
+   f"{w.config.host}/api/2.0/permissions/database-instances/{instance_name}",
+   headers={"Authorization": f"Bearer {ws_token}",
+            "Content-Type": "application/json"},
+   json={"access_control_list": [{"service_principal_name": client_id,
+                                  "permission_level": "CAN_USE"}]}
+).raise_for_status()
+
+
+lakebase_role_sql = f"""
+CREATE EXTENSION IF NOT EXISTS databricks_auth;
+SELECT databricks_create_role('{client_id}', 'SERVICE_PRINCIPAL');
+GRANT CONNECT ON DATABASE databricks_postgres TO "{client_id}";
+GRANT USAGE ON SCHEMA public TO "{client_id}";
+GRANT SELECT, INSERT ON public.session_messages TO "{client_id}";
+"""
+If environment variables DATABRICKS_CLIENT_ID, DATABRICKS_CLIENT_SECRET and DATABRICKS_HOST are available, LakebaseMemory class will authenticate as SPN.
+Genie space
+Genie is a compound AI system that was created as a tool for business users to gain data insights by asking questions in natural language via user interface. 
+Genie translates natural language into SQL queries and generates an appropriate response using a compound AI system. Instead of relying on a single large model, it combines multiple specialized components working together. 
+Genie leverages several information sources: table schemas, column names and their descriptions, example SQL queries, custom instructions, and conversation history. You can enhance its accuracy by building a knowledge store with business context and relevant column values.
+While originally built for human interaction, Genie is now available via API, making it a powerful tool for AI agents.
+Vector Search vs. Genie
+Vector Search and Genie serve complementary purposes. To determine the best fit for a specific task, consider how the nature of the query dictates the tool usage:
+* "What are recent approaches to efficient attention mechanisms?" → Vector Search is the best fit here, as it retrieves semantically similar paper chunks based on meaning rather than structured counts.
+* "How many papers were published per category in 2024?" → Genie is ideal for this as it translates this to SQL against the metadata table.
+* "Who are the most prolific authors in our collection?" → Genie can easily count and rank authors by querying the structured metadata.
+For the arXiv pipeline, we will create a Genie Space and grant it access to the metadata table. Although it is possible to connect Genie directly to a vector search index, keeping these components separate gives us finer control over how tools are used.
+Provisioning the SQL Warehouse
+Before creating a Genie Space, we must provision a SQL warehouse, as Genie relies on a warehouse to query tables. We will create this warehouse using the Databricks SDK. In this example, we deliberately choose the smallest serverless warehouse size, configure auto-termination after 5 minutes of inactivity, and apply usage policy so that costs can be tracked and allocated later.
+While we could also have used Databricks Asset Bundles (DABs) to create a warehouse, we are using the SDK here for a specific reason: creating a Genie Space was not yet supported via DABs. To keep our provisioning logic consistent within this workflow, both the warehouse and the Genie Space are managed through the SDK:
+from databricks.sdk import WorkspaceClient
+from databricks.sdk.service import sql
+from databricks.sdk.service.sql import CreateWarehouseRequestWarehouseType
+
+
+w = WorkspaceClient()
+
+
+created = w.warehouses.create(
+   name="2XS_arxiv_warehouse",
+   cluster_size="2X-Small",
+   max_num_clusters=1,
+   auto_stop_mins=5,
+   warehouse_type=CreateWarehouseRequestWarehouseType("PRO"),
+   enable_serverless_compute=True,
+   tags=sql.EndpointTags(
+       custom_tags=[sql.EndpointTagPair(key="project",
+                                        value="arxiv_curator")])
+   ,
+).result()
+
+
+warehouse_id=created.id
+Creating the Genie Space
+Genie space can be created via user interface, API, or Databricks sdk. Below is an example of creating a Genie space using SDK, with access to only one table (arxiv_papers) under the defined catalog and schema:
+import json
+from arxiv_curator.config import ProjectConfig
+
+
+cfg = ProjectConfig.from_yaml("../project_config.yml")
+catalog = cfg.catalog
+schema = cfg_config.schema
+
+
+serialized_space = {
+   "version": 1,
+   "data_sources": {
+       "tables": [
+           {
+               "identifier": f"{catalog}.{schema}.arxiv_papers",
+               "column_configs": [
+                   {"column_name": "authors"},
+                   {"column_name": "ingest_ts", "get_example_values": True},
+                   {"column_name": "paper_id", "get_example_values": True},
+                   {
+                       "column_name": "pdf_url",
+                       "get_example_values": True,
+                       "build_value_dictionary": True,
+                   },
+                   {"column_name": "processed", "get_example_values": True},
+                   {"column_name": "published", "get_example_values": True},
+                   {
+                       "column_name": "summary",
+                       "get_example_values": True,
+                       "build_value_dictionary": True,
+                   },
+                   {
+                       "column_name": "title",
+                       "get_example_values": True,
+                       "build_value_dictionary": True,
+                   },
+                   {
+                       "column_name": "volume_path",
+                       "get_example_values": True,
+                       "build_value_dictionary": True,
+                   },
+               ],
+           }
+       ]
+   },
+}
+
+
+space = w.genie.create_space(
+   warehouse_id=warehouse_id,
+   serialized_space=json.dumps(serialized_space),
+   title="arxiv-curator-space",
+)
+The serialized space definition can be retrieved for an existing Genie space using the get_space function:
+space_id = space.space_id
+
+
+space = w.genie.get_space(space_id=space_id, include_serialized_space=True)
+json.loads(space.serialized_space)
+Interacting with Genie
+We can interact with the Genie space using sdk. Start a conversation and ask it to find the last 10 published papers available in the metadata table:
+conversation = w.genie.start_conversation_and_wait(
+   space_id=space.space_id,
+   content="Find the last 10 papers published")
+We can inspect what the returned object looks like and notice that Genie translated the original question to a SQL query:
+  
+
+Let’s ask a question within the same conversation (Genie keeps the message history within the conversation), and request to return the list of authors of the last 10 publications:
+message = w.genie.create_message_and_wait(
+   space_id=space.space_id,
+   conversation_id=conversation.conversation_id,
+   content="Return the list of authors of the last 10 papers published")
+We can see that Genie was able to successfully answer the question:
+  
+
+Having established our Vector Search index for semantic retrieval and our Genie space for analytical queries, we now have the two foundational sources of context for our agent.
+
+
+The next challenge is exposing these capabilities to the agent in a standardized, scalable way.
