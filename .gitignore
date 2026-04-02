@@ -11,6 +11,7 @@ __pycache__/
 
 # Folders
 # data/
+original_data/
 
 # Distribution / packaging
 .Python
@@ -95,3 +96,4 @@ dmypy.json
 # VS code configuration
 .vscode
 .history
+.cursor/
