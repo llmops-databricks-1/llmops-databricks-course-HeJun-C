@@ -60,21 +60,21 @@ class GenieClient:
         )
         conversation_id: str = conv.conversation_id
         message_id: str = conv.message_id
-        logger.debug(
-            "conversation={} message={}", conversation_id, message_id
-        )
+        logger.debug("conversation={} message={}", conversation_id, message_id)
 
         msg = self._poll_until_done(conversation_id, message_id)
 
-        status = (msg.status or "UNKNOWN").value if hasattr(msg.status, "value") else str(msg.status or "UNKNOWN")
+        status = (
+            (msg.status or "UNKNOWN").value
+            if hasattr(msg.status, "value")
+            else str(msg.status or "UNKNOWN")
+        )
 
         if status != "COMPLETED":
             logger.warning("Genie finished with status={}", status)
             return GenieResult(status=status)
 
-        return self._extract_result(
-            conversation_id, message_id, msg
-        )
+        return self._extract_result(conversation_id, message_id, msg)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -95,9 +95,7 @@ class GenieClient:
                 message_id=message_id,
             )
             raw_status = (
-                msg.status.value
-                if hasattr(msg.status, "value")
-                else str(msg.status)
+                msg.status.value if hasattr(msg.status, "value") else str(msg.status)
             )
             if raw_status in ("COMPLETED", "FAILED", "CANCELLED"):
                 return msg
@@ -111,9 +109,7 @@ class GenieClient:
             elapsed += wait
             wait = min(wait * _POLL_BACKOFF_FACTOR, _POLL_MAX_WAIT)
 
-        raise TimeoutError(
-            f"Genie did not complete within {_POLL_MAX_SECONDS}s"
-        )
+        raise TimeoutError(f"Genie did not complete within {_POLL_MAX_SECONDS}s")
 
     def _extract_result(
         self,
@@ -153,20 +149,13 @@ class GenieClient:
                     schema = getattr(manifest, "schema", None)
                     if schema:
                         columns = [
-                            c.name
-                            for c in (
-                                getattr(schema, "columns", None) or []
-                            )
+                            c.name for c in (getattr(schema, "columns", None) or [])
                         ]
                 # Path: qr.statement_response.result.data_array
                 result = getattr(stmt, "result", None)
                 if result:
-                    raw_rows = (
-                        getattr(result, "data_array", None) or []
-                    )
-                    rows = [
-                        dict(zip(columns, r)) for r in raw_rows
-                    ]
+                    raw_rows = getattr(result, "data_array", None) or []
+                    rows = [dict(zip(columns, r, strict=False)) for r in raw_rows]
             except Exception:
                 logger.opt(exception=True).warning(
                     "Failed to fetch query result for attachment {}",

@@ -15,16 +15,16 @@ import re
 import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import mlflow
-from databricks.connect import DatabricksSession
-from openai import OpenAI
-
-# ── Path setup ───────────────────────────────────────────────────────
+# ── Path setup (must precede first-party imports) ────────────────────
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
+
+import mlflow  # noqa: E402
+from databricks.connect import DatabricksSession  # noqa: E402
+from openai import OpenAI  # noqa: E402
 
 from llmops_databricks_course_HeJun_C.eda_agent import (  # noqa: E402
     CATALOG,
@@ -77,23 +77,17 @@ def parse_benchmark(path: Path) -> list[BenchmarkCase]:
         block = block.strip()
         if not block.startswith("## "):
             continue
-        header_match = re.match(
-            r"^## (\d+)\.\s+(.+)$", block, re.MULTILINE
-        )
+        header_match = re.match(r"^## (\d+)\.\s+(.+)$", block, re.MULTILINE)
         if not header_match:
             continue
         number = int(header_match.group(1))
         question = header_match.group(2).strip()
         question = re.sub(r"`", "", question)
 
-        diff_match = re.search(
-            r"\*\*Difficulty:\*\*\s*(\w+)", block
-        )
+        diff_match = re.search(r"\*\*Difficulty:\*\*\s*(\w+)", block)
         difficulty = diff_match.group(1) if diff_match else "Unknown"
 
-        sql_match = re.search(
-            r"```sql\n(.*?)```", block, re.DOTALL
-        )
+        sql_match = re.search(r"```sql\n(.*?)```", block, re.DOTALL)
         golden_sql = sql_match.group(1).strip() if sql_match else ""
 
         if golden_sql:
@@ -194,9 +188,7 @@ class _ClassificationCapture:
     def __init__(self) -> None:
         self.classification: str = ""
 
-    def __call__(
-        self, event: str, message: str, data: dict[str, Any]
-    ) -> None:
+    def __call__(self, event: str, message: str, data: dict[str, Any]) -> None:
         if event == "classify_done" and "type" in data:
             self.classification = data["type"]
 
@@ -212,8 +204,12 @@ def _suppress_logs() -> None:
     except Exception:
         pass
     for name in (
-        "alembic", "mlflow", "databricks",
-        "py4j", "pyspark", "urllib3",
+        "alembic",
+        "mlflow",
+        "databricks",
+        "py4j",
+        "pyspark",
+        "urllib3",
     ):
         logging.getLogger(name).setLevel(logging.WARNING)
 
@@ -266,11 +262,7 @@ def main() -> None:
 
     for i, case in enumerate(cases, 1):
         tag = f"[{i}/{len(cases)}]"
-        q_short = (
-            case.question[:58] + ".."
-            if len(case.question) > 60
-            else case.question
-        )
+        q_short = case.question[:58] + ".." if len(case.question) > 60 else case.question
         print(
             f"  {_BOLD}{_WHITE}{tag}{_RESET} "
             f"Q{case.number} ({case.difficulty}): {q_short}"
@@ -354,15 +346,9 @@ def main() -> None:
 
     for r in results:
         v_color = (
-            _GREEN if r.verdict == "pass"
-            else _RED if r.verdict == "fail"
-            else _YELLOW
+            _GREEN if r.verdict == "pass" else _RED if r.verdict == "fail" else _YELLOW
         )
-        q_short = (
-            r.question[:40] + ".."
-            if len(r.question) > 42
-            else r.question
-        )
+        q_short = r.question[:40] + ".." if len(r.question) > 42 else r.question
         cls = r.agent_classification or "—"
         print(
             f"  {r.number:>3}  {r.difficulty:<8}  {cls:<12}  "
@@ -386,10 +372,7 @@ def main() -> None:
     if total > 0:
         rate = passed / total * 100
         rate_color = _GREEN if rate >= 70 else _YELLOW if rate >= 50 else _RED
-        print(
-            f"  {_BOLD}Pass rate: "
-            f"{rate_color}{rate:.1f}%{_RESET}"
-        )
+        print(f"  {_BOLD}Pass rate: {rate_color}{rate:.1f}%{_RESET}")
 
     print()
     for diff in ("Easy", "Medium", "Hard"):
@@ -398,11 +381,7 @@ def main() -> None:
             p = sum(1 for r in subset if r.verdict == "pass")
             pct = p / len(subset) * 100
             diff_color = _GREEN if pct >= 70 else _YELLOW if pct >= 50 else _RED
-            print(
-                f"    {diff:<8} "
-                f"{diff_color}{p}/{len(subset)} "
-                f"({pct:.0f}%){_RESET}"
-            )
+            print(f"    {diff:<8} {diff_color}{p}/{len(subset)} ({pct:.0f}%){_RESET}")
 
     # ── Log to MLflow ────────────────────────────────────────────────
     with mlflow.start_run(run_name="eval_summary"):
@@ -416,28 +395,28 @@ def main() -> None:
             subset = [r for r in results if r.difficulty == diff]
             if subset:
                 p = sum(1 for r in subset if r.verdict == "pass")
-                mlflow.log_metric(
-                    f"pass_rate_{diff.lower()}", p / len(subset)
-                )
+                mlflow.log_metric(f"pass_rate_{diff.lower()}", p / len(subset))
 
     # ── Save results to tracing folder ───────────────────────────────
     TRACING_DIR.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     out_path = TRACING_DIR / f"{ts}_eval_results.json"
     serializable = []
     for r in results:
-        serializable.append({
-            "number": r.number,
-            "question": r.question,
-            "difficulty": r.difficulty,
-            "agent_classification": r.agent_classification,
-            "verdict": r.verdict,
-            "judge_reason": r.judge_reason,
-            "elapsed_s": r.elapsed_s,
-            "error": r.error,
-            "golden_answer_preview": r.golden_answer[:500],
-            "agent_answer_preview": r.agent_answer[:500],
-        })
+        serializable.append(
+            {
+                "number": r.number,
+                "question": r.question,
+                "difficulty": r.difficulty,
+                "agent_classification": r.agent_classification,
+                "verdict": r.verdict,
+                "judge_reason": r.judge_reason,
+                "elapsed_s": r.elapsed_s,
+                "error": r.error,
+                "golden_answer_preview": r.golden_answer[:500],
+                "agent_answer_preview": r.agent_answer[:500],
+            }
+        )
     out_path.write_text(json.dumps(serializable, indent=2))
     print(f"\n  {_DIM}Results saved → {out_path}{_RESET}")
     print()

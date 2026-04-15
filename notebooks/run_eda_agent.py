@@ -115,9 +115,7 @@ def _permanent(icon: str, text: str, color: str = _DIM) -> None:
     print(f"  {color}{icon}{_RESET} {text}")
 
 
-def on_status(
-    event: str, message: str, data: dict[str, Any]
-) -> None:
+def on_status(event: str, message: str, data: dict[str, Any]) -> None:
     """Render agent events — ephemeral spinners for processing,
     permanent lines for milestones."""
 
@@ -140,9 +138,7 @@ def on_status(
 
     elif event == "genie_done":
         row_count = data.get("row_count", "?")
-        _permanent(
-            "✓", f"Genie returned {row_count} rows", _GREEN
-        )
+        _permanent("✓", f"Genie returned {row_count} rows", _GREEN)
 
     elif event == "metadata_done":
         _permanent("✓", "Dataset knowledge retrieved", _GREEN)
@@ -159,14 +155,9 @@ def on_status(
         )
         for s in steps:
             badge = (
-                f"{_BLUE}SQL{_RESET}"
-                if s["method"] == "sql"
-                else f"{_MAGENTA}PY{_RESET}"
+                f"{_BLUE}SQL{_RESET}" if s["method"] == "sql" else f"{_MAGENTA}PY{_RESET}"
             )
-            print(
-                f"    {_DIM}{s['n']}.{_RESET} "
-                f"[{badge}] {s['desc']}"
-            )
+            print(f"    {_DIM}{s['n']}.{_RESET} [{badge}] {s['desc']}")
 
     elif event == "step_start":
         step_n = data["step"]
@@ -174,9 +165,7 @@ def on_status(
         desc = data["description"]
         method = data["method"]
         badge = "SQL" if method == "sql" else "Python"
-        _spinner.update(
-            f"Step {step_n}/{total}: {desc} [{badge}]"
-        )
+        _spinner.update(f"Step {step_n}/{total}: {desc} [{badge}]")
         if not _spinner._running:
             _spinner.start()
 
@@ -201,9 +190,7 @@ def on_status(
         trace_path = data.get("trace_path", "")
         _permanent("✓", f"Finished in {elapsed}s", _GREEN)
         if trace_path:
-            print(
-                f"    {_DIM}Trace: {trace_path}{_RESET}"
-            )
+            print(f"    {_DIM}Trace: {trace_path}{_RESET}")
 
 
 # ── Log suppression ─────────────────────────────────────────────────
@@ -293,10 +280,7 @@ def main() -> None:
                     f" a new question{_RESET} "
                     f"{_DIM}(or 'quit' to exit){_RESET}\n"
                 )
-            user_input = input(
-                prompt_text
-                + f"  {_BOLD}{_GREEN}❯{_RESET} "
-            )
+            user_input = input(prompt_text + f"  {_BOLD}{_GREEN}❯{_RESET} ")
         except (EOFError, KeyboardInterrupt):
             break
 
@@ -321,12 +305,8 @@ def main() -> None:
             print(f"\n  {_RED}✗ Error: {exc}{_RESET}\n")
             continue
 
-        conversation_history.append(
-            {"role": "user", "content": user_input}
-        )
-        conversation_history.append(
-            {"role": "assistant", "content": answer}
-        )
+        conversation_history.append({"role": "user", "content": user_input})
+        conversation_history.append({"role": "assistant", "content": answer})
         turn_count += 1
 
         print(f"\n{_hline('━')}")

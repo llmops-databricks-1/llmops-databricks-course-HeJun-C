@@ -10,7 +10,7 @@ MLflow provides specialized flavors for agentic frameworks, including DSPy, Lang
 
 
 For even greater control, you can define your own custom orchestration logic and utilize mlflow.pyfunc.ResponsesAgent that follows OpenAI Responses API. This approach gives you more flexibility than built-in flavors, which can be great for fast prototyping:
-  
+
 
 
 
@@ -21,7 +21,7 @@ Let’s examine the specific components that make up an MLflow trace.
 Anatomy of a trace
 At a high level, a trace is conceptually similar to an MLflow run. Both belong to an MLflow experiment. The difference is that traditional experiments track model training cycles, whereas GenAI experiments use traces to capture live or simulated agent executions.
 Each trace consists of two main parts: Trace Info and Trace Data:
-  
+
 
 Trace Info contains high-level metadata about an execution. This includes the experiment ID, trace status (for example, success or failure), and the total execution latency. It also supports tags, which add contextual information such as the user, session ID, or developer-defined key-value pairs. These tags are particularly useful for searching, filtering, and organizing traces during analysis, monitoring, and debugging.
 Trace Data stores the actual execution payload. It contains the instrumented Span objects that capture the step-by-step behavior of your application from input to output. Spans record critical operations such as LLM invocations, tool calls, and intermediate processing steps, providing a detailed, end-to-end view of how a GenAI application executes in practice.
@@ -35,7 +35,7 @@ MLflow supports a rich set of span types that represent common operations within
 * RERANKER: Re-ranking retrieved results based on relevance.
 As with traditional ML experiment tracking, MLflow can automatically log traces. However, autologging is not always sufficient if you want to attach custom metadata and domain-specific context. To gain full control, we must use the MLflow tracing APIs.
 MLflow Tracing APIs
-The simplest way to trace a function is by using the @mlflow.trace() decorator. When applied, it creates a span for the duration of the decorated function and automatically captures the function’s inputs and outputs. For example, the following code produces a span named my_func that records the input arguments x and y, along with the function’s return value. 
+The simplest way to trace a function is by using the @mlflow.trace() decorator. When applied, it creates a span for the duration of the decorated function and automatically captures the function’s inputs and outputs. For example, the following code produces a span named my_func that records the input arguments x and y, along with the function’s return value.
 import mlflow
 
 
@@ -394,22 +394,22 @@ second_request = {
 
 result_2 = agent.predict(second_request)
 After we invoked the predict functions, we can see that an MLflow trace has appeared under the defined experiment:
-  
+
 
 
 
 We can inspect the trace in the UI to view a detailed breakdown of the execution and the final output. By opening a trace, we can also confirm that the session_id we passed in the code is captured in the trace metadata:
-  
+
 
 LLM system evaluation
 Before we deep dive into the code, let’s talk about what evaluating an LLM system means. Simply put, evaluation is the systematic process measuring a system’s quality. In traditional machine learning systems, we rely on well-established evaluation metrics to make this judgement, such as accuracy or F1 score for classification, and RMSE or R² for regression. LLM systems, however, are much harder to evaluate, which is why evals, a term commonly used by practitioners to refer to LLM evaluations, are often treated as an afterthought.
 During the LLM system development phase, teams can get pretty far with manual testing and gut feeling. However, once the system reaches production and is used by real users, building without evals quickly becomes unsustainable. After you receive complaints and make changes to the system, there is no reliable way to know whether other behaviors have not silently regressed.
-Just as we wouldn't skip evaluation in a standard ML workflow, we shouldn't skip it here. Evals are most valuable when implemented early for several reasons:: 
+Just as we wouldn't skip evaluation in a standard ML workflow, we shouldn't skip it here. Evals are most valuable when implemented early for several reasons::
 * Explicit Behavior: They force you to define exactly what "good behavior" looks like for your agent.
 * Measurable Impact: They allow you to measure how changes to orchestration logic, prompts, or the underlying model affect performance.
 * Hyperparameter Optimization: In many ways, choosing a prompt or a temperature setting is like tuning hyperparameters in classic ML; evals provide the data needed to make those choices.
 How to evaluate LLM systems
-If you’re starting with evals early, the best approach is a simple, iterative loop. Experts Aishwarya Naresh Reganti and Kiriti Badam, in their materials on AI Evals, suggest this workflow: 
+If you’re starting with evals early, the best approach is a simple, iterative loop. Experts Aishwarya Naresh Reganti and Kiriti Badam, in their materials on AI Evals, suggest this workflow:
 1. Create examples: Start small. 10–20 high-quality examples are better than 100 mediocre ones.
 2. Run test cases: Process them through your current agent.
 3. Evaluate with the business: Did the output meet expectations?
@@ -444,7 +444,7 @@ Input
 	Repeated already-tried suggestion, conversation context not maintained
 	Errors and potential causes can be identified after the initial evaluation session. For example, if the user says "same issue as last month" and the agent fails to retrieve the issue from the history, the root cause might be missing access to ticket data. This isn't a quick fix: it requires adding a tool and integration, unlike issues that can be addressed by changing the prompt alone.
 As a next step, you should identify metrics. A metric represents a behavior or quality you want to track over time. Examples include tool usage correctness (for example, did the agent attempt to retrieve data from history), tone appropriateness, number of tool calls, latency, and cost. For systems that produce structured output, common metrics include structured output correctness or simple quantitative measures such as output length or character count.
-Once metrics are defined, you choose graders to measure them. A grader (also called a scorer) is the mechanism used to evaluate a metric. In practice, agent evaluations typically rely on three types of graders: 
+Once metrics are defined, you choose graders to measure them. A grader (also called a scorer) is the mechanism used to evaluate a metric. In practice, agent evaluations typically rely on three types of graders:
 * Code-based graders are deterministic checks implemented directly in code. Examples include string or regex matching, character or token counts, output structure validation (for example, using Pydantic, as shown earlier), tool call verification, latency measurement, and cost tracking. Code-based graders are fast, inexpensive, objective, and reproducible, making them ideal to introduce early and run continuously. Their main limitation is a lack of nuance: they are poorly suited for evaluating subjective or context-dependent behaviors.
 * Model-based graders, often referred to as LLM judges, use a language model to assess qualities that are difficult to capture with code alone, such as adherence to guidelines, correctness of reasoning, tone, or contextual appropriateness. These graders are more flexible and can handle open-ended outputs, but they are more expensive and non-deterministic. To be reliable, they typically require calibration against human judgment.
 * Human graders are unavoidable if you want an LLM system that truly meets business expectations. While slow and expensive, human evaluation, ideally performed by subject matter experts, serves as the gold standard. Human graders are essential for defining evaluation criteria, calibrating model-based graders, and reviewing edge cases. In production, they are often used for spot checks to ensure the system continues to behave as intended as user behavior and real-world conditions evolve.
@@ -543,7 +543,7 @@ Retention
 	Predefined scorers in MLflow evaluate model behavior using instructions built directly into the library. They are useful for getting started quickly and for generating early evaluation signals, but on their own they are rarely sufficient for rigorous or production-grade evaluation.
 To support more tailored evaluation needs, MLflow allows you to define custom scorers. The simplest of these is the Guidelines scorer, which lets you specify general, natural language rules that apply across tasks without requiring per-example expectations. Because guidelines are evaluated as pass/fail conditions, this scorer provides a fast and accessible way to customize evaluation behavior.
 For more nuanced and flexible evaluation, MLflow offers template-based LLM scorers. These scorers enable richer evaluation logic by allowing the judge to reason over additional context, such as expectations, conversation history, or execution traces:
-  
+
 
 While more powerful, the differences between guidelines-based and template-based LLM scorers are not always obvious at first glance. To make these distinctions concrete, we’ll compare the Guidelines scorer with a template-based LLM scorer created using the make_judge function, starting with a simple example:
 import mlflow
@@ -580,7 +580,7 @@ data = [
 
 
 mlflow.genai.evaluate(data=data, scorers=[escalation_guidelines])
-This evaluation session created traces showing that the first example failed the guideline, and the second has passed it:  
+This evaluation session created traces showing that the first example failed the guideline, and the second has passed it:
 The Guidelines scorer produces binary outcomes (pass/fail). When you need more expressive feedback, such as a 1–5 rating, a continuous score, or structured diagnostic output, you should use a template-based LLM scorer. While this is just one example of when an LLM scorer is the better choice, it represents a common and practical scenario.
 In the code snippet below, we create a judge that produces an escalation quality score (from 1 to 5) instead of a binary output. Notice that the make_judge function takes an instruction argument that contains template variables. Template-based LLM scorers support {{ inputs }}, {{ outputs }}, and {{ expectations }} template variables.
 import mlflow
@@ -608,7 +608,7 @@ escalation_judge = make_judge(
 
 mlflow.genai.evaluate(data=data, scorers=[escalation_judge])
 This evaluation session creates traces showing scores 5 and 1 for the respective examples we provided:
-  
+
 
 One of the key benefits of using a template-based LLM scorer is the ability to better align automated evaluation with human judgment. You can add human evaluations directly through the MLflow UI and then combine those annotations with trace data and LLM-based judge evaluations to align the scorer.
 In this example, we use the SIMBA (Stochastic Introspective Mini-Batch Ascent) optimizer from the DSPy library. It enables an LLM to analyze its own performance and derive improvement rules by sampling mini-batches, identifying challenging examples with high output variability, and either generating self-reflective rules or incorporating successful examples as demonstrations. Custom optimizers are also supported.
@@ -777,7 +777,7 @@ results = mlflow.genai.evaluate(
 Once the evaluation is complete, you can retrieve the results directly from the EvaluationResults object, where they are stored within the metrics attribute. For a more visual deep dive, you can inspect the performance data in the MLflow tracing UI. This view is particularly helpful as it provides a clear breakdown of how frequently the agent’s responses passed your defined assessments:
 
 
-  
+
 
 We can use the logic we defined to run evaluation before logging the model, as well as to monitor the system once it is in production. However, before we can explore those monitoring workflows in detail, we first need to log and register the agent.
 
@@ -890,7 +890,7 @@ Although the agent defined in the arxiv_agent.py script imports the custom arxiv
 Simplifying custom packaging is not the primary benefit of this approach. The main advantage is significantly faster agent deployment and autoscaling. Keep in mind that model registration takes slightly longer than usual.
 Another important constraint to keep in mind is model size: Databricks serverless optimized deployments support a maximum model size of 1 GB, compared to 4 GB when environment packaging is not used.
 The environment packaging stores all Python dependencies together with the model. We can find them under the _databricks folder in agent artifacts:
-  
+
 
 After the agent is registered, we can set the latest-model alias so that we can easily retrieve the latest version of the agent:
 from mlflow import MlflowClient

@@ -16,7 +16,6 @@ import pytest
 from llmops_databricks_course_HeJun_C.eda_agent import (
     EDAAgent,
     Step,
-    StepResult,
 )
 
 
@@ -51,10 +50,7 @@ class TestSQLStepUsesLocalSpark:
             step_number=1,
             description="Create temp view",
             method="sql",
-            code=(
-                "CREATE OR REPLACE TEMP VIEW test_view AS "
-                "SELECT 1 AS id"
-            ),
+            code=("CREATE OR REPLACE TEMP VIEW test_view AS SELECT 1 AS id"),
         )
         result = agent._execute_sql_step(step)
 
@@ -63,9 +59,7 @@ class TestSQLStepUsesLocalSpark:
         assert result.status == "success"
 
     def test_sql_step_returns_sample_rows(self, agent: EDAAgent) -> None:
-        sample_df = pd.DataFrame(
-            {"id": [1, 2], "name": ["alice", "bob"]}
-        )
+        sample_df = pd.DataFrame({"id": [1, 2], "name": ["alice", "bob"]})
         mock_result = MagicMock()
         mock_result.limit.return_value.toPandas.return_value = sample_df
         agent._spark.sql.return_value = mock_result
@@ -100,9 +94,7 @@ class TestSQLStepUsesLocalSpark:
 class TestSessionSharing:
     """SQL temp views must be visible to Python steps via the same session."""
 
-    def test_temp_view_from_sql_readable_in_python(
-        self, agent: EDAAgent
-    ) -> None:
+    def test_temp_view_from_sql_readable_in_python(self, agent: EDAAgent) -> None:
         """Simulate the full flow: SQL creates a view, Python reads it.
 
         Both steps use the same self._spark object, so the view is shared.
@@ -133,9 +125,7 @@ class TestSessionSharing:
 
         agent._spark.table.assert_called_once_with("v")
 
-    def test_both_steps_use_same_spark_object(
-        self, agent: EDAAgent
-    ) -> None:
+    def test_both_steps_use_same_spark_object(self, agent: EDAAgent) -> None:
         """The spark object passed to _run_python and used by
         _execute_sql_step must be the exact same instance."""
         sample_df = pd.DataFrame({"a": [1]})
@@ -150,15 +140,11 @@ class TestSessionSharing:
             code="SELECT 1",
         )
         agent._execute_sql_step(sql_step)
-        spark_used_in_sql = agent._spark.sql.call_args[0][0]
 
         captured: dict = {}
         agent._spark.table.return_value = MagicMock()
 
-        py_code = (
-            "import sys\n"
-            "result['spark_id'] = id(spark)\n"
-        )
+        py_code = "import sys\nresult['spark_id'] = id(spark)\n"
         ns: dict = {"spark": agent._spark, "result": captured}
         exec(py_code, ns)  # noqa: S102
 

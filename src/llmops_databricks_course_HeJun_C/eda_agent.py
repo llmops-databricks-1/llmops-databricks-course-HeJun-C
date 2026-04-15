@@ -18,7 +18,7 @@ import time
 import traceback
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -34,9 +34,7 @@ from llmops_databricks_course_HeJun_C.memory import LakebaseMemory
 
 # ── Configuration ────────────────────────────────────────────────────
 GENIE_SPACE_ID = "01f12d5f438713899fcb6ee851206636"
-LLM_BASE_URL = (
-    "https://dbc-b1b2f91a-d102.cloud.databricks.com/serving-endpoints"
-)
+LLM_BASE_URL = "https://dbc-b1b2f91a-d102.cloud.databricks.com/serving-endpoints"
 LLM_MODEL = "course_LLM"
 CATALOG = "mlops_dev"
 SCHEMA = "chenheju"
@@ -78,9 +76,7 @@ class StepResult:
 StatusCallback = Callable[[str, str, dict[str, Any]], None]
 
 
-def _noop_callback(
-    event: str, message: str, data: dict[str, Any]
-) -> None:
+def _noop_callback(event: str, message: str, data: dict[str, Any]) -> None:
     pass
 
 
@@ -97,9 +93,7 @@ class EDAAgent:
         self._emit("init", "Resolving Databricks credentials...")
         token = self._resolve_token()
         self._llm = OpenAI(base_url=LLM_BASE_URL, api_key=token)
-        self._genie = GenieClient(
-            GENIE_SPACE_ID, profile=DATABRICKS_PROFILE
-        )
+        self._genie = GenieClient(GENIE_SPACE_ID, profile=DATABRICKS_PROFILE)
         self._ws = WorkspaceClient(profile=DATABRICKS_PROFILE)
         self._emit("init", "Connecting to Databricks (Spark)...")
         self._spark = (
@@ -170,14 +164,12 @@ class EDAAgent:
         trace_data: dict[str, Any] = {
             "question": question,
             "classification": q_type,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "session_id": session_id,
         }
 
         if q_type == "direct":
-            answer = self.handle_direct_question(
-                question, trace_data, history=history
-            )
+            answer = self.handle_direct_question(question, trace_data, history=history)
         else:
             answer = self.handle_exploratory_question(
                 question, trace_data, history=history
@@ -209,9 +201,7 @@ class EDAAgent:
     # ------------------------------------------------------------------
 
     @mlflow.trace(span_type="RETRIEVER", name="memory_load")
-    def load_memory(
-        self, session_id: str
-    ) -> list[dict[str, Any]]:
+    def load_memory(self, session_id: str) -> list[dict[str, Any]]:
         """Load previous messages from Lakebase memory."""
         if self.memory:
             return self.memory.load_messages(session_id)
@@ -255,8 +245,7 @@ class EDAAgent:
         label = resp.strip().lower().strip('"')
         if label not in ("direct", "exploratory"):
             logger.warning(
-                "Unexpected classifier output {!r}, defaulting to "
-                "exploratory",
+                "Unexpected classifier output {!r}, defaulting to exploratory",
                 label,
             )
             label = "exploratory"
@@ -341,16 +330,16 @@ class EDAAgent:
         trace_data["skills_context"] = skills
 
         self._emit("plan", "Creating analysis plan...")
-        plan = self.create_analysis_plan(
-            question, metadata, skills, history=history
-        )
+        plan = self.create_analysis_plan(question, metadata, skills, history=history)
         self._emit(
             "plan_done",
             f"Plan created with {len(plan)} steps",
-            {"steps": [
-                {"n": s.step_number, "desc": s.description, "method": s.method}
-                for s in plan
-            ]},
+            {
+                "steps": [
+                    {"n": s.step_number, "desc": s.description, "method": s.method}
+                    for s in plan
+                ]
+            },
         )
         trace_data["plan"] = [asdict(s) for s in plan]
 
@@ -358,27 +347,31 @@ class EDAAgent:
         for step in plan:
             self._emit(
                 "step_start",
-                f"Step {step.step_number}/{len(plan)}: "
-                f"{step.description}",
-                {"step": step.step_number, "total": len(plan),
-                 "method": step.method, "description": step.description},
+                f"Step {step.step_number}/{len(plan)}: {step.description}",
+                {
+                    "step": step.step_number,
+                    "total": len(plan),
+                    "method": step.method,
+                    "description": step.description,
+                },
             )
             result = self.execute_step(step)
             self._emit(
                 "step_done",
                 f"Step {step.step_number}: {result.status}",
-                {"step": step.step_number, "status": result.status,
-                 "output_len": len(result.output),
-                 "errors": result.errors},
+                {
+                    "step": step.step_number,
+                    "status": result.status,
+                    "output_len": len(result.output),
+                    "errors": result.errors,
+                },
             )
             step_results.append(result)
 
         trace_data["step_results"] = [asdict(r) for r in step_results]
 
         self._emit("report", "Generating final report...")
-        report = self.generate_report(
-            question, step_results, history=history
-        )
+        report = self.generate_report(question, step_results, history=history)
         trace_data["report"] = report
 
         report_path = _save_report(question, report)
@@ -401,14 +394,11 @@ class EDAAgent:
             )
             chunks: list[str] = []
             for row in results.result.data_array:
-                chunks.append(
-                    f"[{row[0]}] {row[2]}\n{row[3]}"
-                )
+                chunks.append(f"[{row[0]}] {row[2]}\n{row[3]}")
             return "\n\n---\n\n".join(chunks)
         except Exception:
             logger.opt(exception=True).warning(
-                "Vector Search query failed, falling back to empty "
-                "metadata"
+                "Vector Search query failed, falling back to empty metadata"
             )
             return ""
 
@@ -470,9 +460,7 @@ class EDAAgent:
             Return ONLY valid JSON, no markdown fences.
         """)
 
-        raw = self._chat(
-            system=system_prompt, user=question, history=history
-        )
+        raw = self._chat(system=system_prompt, user=question, history=history)
         raw = _strip_json_fences(raw)
         try:
             items = json.loads(raw)
@@ -576,8 +564,9 @@ class EDAAgent:
 
     def _run_python(self, code: str) -> tuple[str, str | None]:
         """Execute *code* locally and capture printed output."""
-        import io
         import contextlib
+        import io
+
         import pyspark.sql.functions as F  # noqa: N812
 
         buf = io.StringIO()
@@ -608,9 +597,7 @@ class EDAAgent:
             return buf.getvalue(), traceback.format_exc()
 
     @mlflow.trace(name="revise_python")
-    def _revise_python(
-        self, code: str, error: str, step: Step
-    ) -> str:
+    def _revise_python(self, code: str, error: str, step: Step) -> str:
         revised = self._chat(
             system=(
                 "You are a Python debugging assistant. The user tried "
@@ -618,10 +605,7 @@ class EDAAgent:
                 "the code and return ONLY the corrected Python code, "
                 "no markdown fences or explanation."
             ),
-            user=(
-                f"Task: {step.description}\n\n"
-                f"Code:\n{code}\n\nError:\n{error}"
-            ),
+            user=(f"Task: {step.description}\n\nCode:\n{code}\n\nError:\n{error}"),
         )
         return _strip_code_fences(revised)
 
@@ -639,9 +623,7 @@ class EDAAgent:
     ) -> str:
         results_text = ""
         for r in step_results:
-            status_label = (
-                "COMPLETED" if r.status == "success" else "SKIPPED"
-            )
+            status_label = "COMPLETED" if r.status == "success" else "SKIPPED"
             results_text += (
                 f"\n### Step {r.step_number}: {r.description}\n"
                 f"Method: {r.method} | Status: {status_label}\n"
@@ -668,10 +650,7 @@ class EDAAgent:
                 "notes, and any caveats. If some steps were skipped, "
                 "note what was missed."
             ),
-            user=(
-                f"Original question: {question}\n\n"
-                f"Analysis results:\n{results_text}"
-            ),
+            user=(f"Original question: {question}\n\nAnalysis results:\n{results_text}"),
             history=history,
         )
         return report
@@ -734,7 +713,7 @@ class EDAAgent:
 
 def _save_local_trace(trace_data: dict[str, Any]) -> Path:
     TRACING_DIR.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     slug = re.sub(r"[^a-z0-9]+", "_", trace_data["question"].lower())[:40]
     path = TRACING_DIR / f"{ts}_{slug}.json"
     path.write_text(json.dumps(trace_data, indent=2, default=str))
@@ -744,7 +723,7 @@ def _save_local_trace(trace_data: dict[str, Any]) -> Path:
 
 def _save_report(question: str, report: str) -> Path:
     TRACING_DIR.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     slug = re.sub(r"[^a-z0-9]+", "_", question.lower())[:40]
     path = TRACING_DIR / f"{ts}_{slug}_report.md"
     path.write_text(report)

@@ -69,9 +69,7 @@ class LakebaseMemory:
         """Get or create connection pool (lazy init)."""
         if self._pool is None:
             conn_string = self._get_connection_string()
-            self._pool = ConnectionPool(
-                conninfo=conn_string, min_size=1, max_size=5
-            )
+            self._pool = ConnectionPool(conninfo=conn_string, min_size=1, max_size=5)
         return self._pool
 
     def _reset_pool(self) -> None:
@@ -99,9 +97,7 @@ class LakebaseMemory:
     # Public API
     # ------------------------------------------------------------------
 
-    def load_messages(
-        self, session_id: str
-    ) -> list[dict[str, Any]]:
+    def load_messages(self, session_id: str) -> list[dict[str, Any]]:
         """Load previous messages for a session, ordered by time."""
         try:
             with self._get_pool().connection() as conn:
