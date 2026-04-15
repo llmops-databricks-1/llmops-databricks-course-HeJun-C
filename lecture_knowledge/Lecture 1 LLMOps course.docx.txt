@@ -1,0 +1,522 @@
+﻿Lecture 1
+Serverless compute
+For the course, we will be using serverless compute. While classic compute is still the best choice for ML projects, serverless compute is a great (even preferred) option for developing AI agents. Serverless compute can be used both for development purposes and running a Databricks job.
+Unlike the all-purpose or job compute, we cannot choose the runtime for serverless compute. Instead, we can curate an environment for dependencies. While the concept of an environment and a runtime are similar, environments are much more lightweight.
+Serverless environments
+In our project, we use Python 3.12, which means we also need to have an environment that supports that Python version. In the course, we use CPU environment version 4, which comes with the following configurations:
+* Operating System: Ubuntu 24.04.2 LTS
+* Python: 3.12.3
+* Databricks Connect: 17 
+* Scala: 2.13.16
+* JDK: 17
+Similar to runtimes, serverless environments come with pre-installed libraries. However, the library versions differ slightly between serverless environment 4 and runtime 17.3 LTS - something to watch for if your workflows switch between serverless and classic compute, as subtle version mismatches can cause unexpected behavior. We recommend installing your own versions of the libraries you need to ensure consistency across environments.
+Similar to the runtimes, environments have support cycles of 3 years. End-of-support for environment 4 is in August 2028. You can check out the release notes for the full overview.
+Cost tracking
+While the costs of classic compute clusters can be tracked using tags, usage policies are used for serverless compute. Serverless usage policies consist of tags that are applied to any serverless compute activity incurred by users assigned to the policy. These tags are recorded in billing logs, enabling you to attribute serverless usage to specific budgets.
+Usage policies can be created programmatically or through the UI, and permissions can be assigned to individual users or user groups. Important to notice that if a usage policy ID is not specified when using serverless resources, the first available policy (in alphabetical order) assigned to the user will be automatically applied (see figures below).
+
+
+ A screenshot of a computer
+
+AI-generated content may be incorrect. 
+
+ A screenshot of a computer
+
+AI-generated content may be incorrect. 
+
+________________
+
+
+Project setup
+Code: https://github.com/llmops-databricks-1/course-code-hub.
+
+
+project-config.yaml
+This is what the project-config.yaml file looks like. For complex configurations, check out the Hydra project.
+system_prompt: |
+ You are a LinkedIn content creation assistant specialized
+ in generating engaging posts about AI and machine learning research.
+
+
+ Your role is to:
+ 1. Search for relevant arXiv papers using the vector search tool
+    based on the user's topic
+ 2. Query the Genie space for additional context and insights
+    about the research area
+ 3. Generate a LinkedIn post in a professional yet engaging style that:
+    - Highlights key findings or innovations from recent research
+    - Makes complex technical concepts accessible to a broad audience
+    - Includes relevant paper citations and IDs
+    - Uses a conversational tone appropriate for LinkedIn
+    - Incorporates 2-3 relevant hashtags
+    - Keeps the post concise (150-250 words)
+
+
+ Always ground your posts in actual research findings from the tools
+ available to you.
+
+
+usage_policy_id: 686c435d-90af-4c40-9ca4-442d4a3d8899
+
+
+dev:
+ catalog: llmops_dev
+ schema: arxiv
+ volume: arxiv_papers
+ genie_space_id: 01f0e97a42981382b3d16f3f1899fdb5
+ llm_endpoint: databricks-gpt-oss-120b
+
+
+acc:
+ catalog: llmops_acc
+ schema: arxiv
+ volume: arxiv_papers
+ genie_space_id: 01f0e97a42981382b3d16f3f1899fdb5
+ llm_endpoint: databricks-gpt-oss-120b
+
+
+prd:
+ catalog: llmops_prd
+ schema: arxiv
+ volume: arxiv_papers
+ genie_space_id: 01f0e97a42981382b3d16f3f1899fdb5
+ llm_endpoint: databricks-gpt-oss-120b
+Notice the usage policy ID in the project_config.yml file. It was created above.
+You may notice the three environment-specific configurations, along with a shared configuration for the system prompt. Although it is possible to use the MLflow Prompt Registry, it is primarily beneficial for prompt optimization workflows and should be combined with managing prompts as code.
+We use Pydantic to verify the configuration and define the ProjectConfig class under the config module.
+pyproject.toml
+Let’s walk through the sections of the pyproject.toml file we use for the MLOps project.
+Project section
+In the project section of the pyproject.toml file, we specify the Python version and all the project dependencies. First of all, it is important to note that we use Python 3.12, which matches the Python version of the environment version 4 for serverless.
+
+
+[project]
+name = "arxiv-curator"
+dynamic = ["version"]
+description = "Arxiv Curator - Shared utilities for LLMOps Course on Databricks"
+requires-python = ">=3.12, <3.13"
+dependencies = [
+    "cffi==1.17.1",
+    "cloudpickle==3.1.1",
+    "numpy==2.4.0",
+    "pandas==2.3.0",
+    "pyarrow==22.0.0",
+    "databricks-sdk==0.85.0",
+    "pydantic==2.11.7",
+    "loguru==0.7.3",
+    "python-dotenv==1.1.1",
+    "databricks-vectorsearch==0.63",
+    "openai==2.8.0",
+    "databricks-mcp==0.4.0",
+    "backoff==2.2.1",
+    "mlflow==3.8.1",
+    "nest-asyncio==1.6.0",
+    "arxiv==2.3.1",
+    "databricks-agents==1.8.2",
+    "psycopg==3.3.2",
+    "psycopg-pool==3.3.0",
+    "psycopg[binary]==3.3.2"
+]
+Secondly, all the package dependencies are pinned to very specific versions. While this may seem beneficial at first glance, it is not considered best practice for packages intended to be reused across multiple projects, as strict version pinning can easily lead to dependency conflicts.
+For reusable packages, it is generally recommended to define a supported range of Python versions and dependency versions instead. In this case, however, the Python package is not designed for reuse, it simply serves as a convenient way to define and manage project-level dependencies.
+When installing the package, there is no need to manually specify all dependency versions listed in the pyproject.toml file. These dependencies are included in the package metadata and will be installed automatically as part of the package installation process.
+Optional dependencies are also defined in the pyproject.toml file and can be installed when needed, for example, for development purposes. Note that they will not be installed automatically when the package itself is added as a dependency as they are not included in package metadata.
+Build system
+The build-system section specifies the build backend used to package and distribute the project. In this case, we are using setuptools as the build backend, and the package version is dynamically determined based on the contents of the version.txt file.
+While several alternative build backends are available, such as build backend provided by uv, or Hatchling, setuptools remains the most mature and widely supported backend in the Python ecosystem.
+[build-system]
+requires = [
+ "setuptools>=72.0"]
+build-backend = "setuptools.build_meta"
+
+
+[tool.setuptools.packages.find]
+where =["src"]
+include = ["hotel_booking*"]
+
+
+[tool.setuptools.dynamic]
+version = { file = "version.txt" }
+Linting and formatting
+For linting and formatting, we use ruff, the fastest tool out there for this purpose, also developed by Astral and written in Rust. Just like uv, it won the hearts of the Python community and replaced the functionality of many other tools. Configurations for ruff are specified in the tool section of the pyproject.toml file:
+
+
+[tool.ruff]
+line-length = 90
+
+
+[tool.ruff.lint]
+select = [
+   "F",    # pyflakes rules
+   "E",    # pycodestyle error rules
+   "W",    # pycodestyle warning rules
+   "B",    # flake8-bugbear rules
+   "I",    # isort rules
+   "UP",   # pyupgrade rules
+   "SIM",  # flake8-simplify rules
+   "ERA",  # eradicate rules
+   "C",    # pylint convention rules
+   "ANN"   # flake8-annotations rules
+]
+ignore = [
+   "D107", # Missing docstring in `__init__`
+   "D203", # incorrect-blank-line-before-class
+   "D213", # multi-line-summary-second-line
+   "C901", # too complex
+   "ERA001", # commented out code
+]
+
+
+[tool.ruff.format]
+indent-style = "space"
+
+
+These configurations are also used for pre-commit hooks that should be installed locally to enforce the rules. Pre-commit hooks are defined in the .pre-commit-config.yaml.
+
+
+exclude: ^tests/resources/
+repos:
+ - repo: https://github.com/pre-commit/pre-commit-hooks
+   rev: v6.0.0
+   hooks:
+     - id: check-added-large-files
+     - id: check-json
+     - id: check-toml
+     - id: check-yaml
+     - id: end-of-file-fixer
+     - id: trailing-whitespace
+ - repo: https://github.com/astral-sh/ruff-pre-commit
+   rev: v0.15.1
+   hooks:
+     - id: ruff
+       args: [--fix, --exit-non-zero-on-fix, --show-fixes]
+     - id: ruff-format
+
+
+Pre-commit hooks will execute on every commit after they are installed using the pre-commit install command. We can also run the uv run pre-commit run –all-files command as part of the CI pipeline to ensure all the files follow the pre-defined rules.
+Pytest configurations
+The pyproject.toml file can also contain some pytest configurations that would allow it to run tests without running into errors - for that reason we must specify the testpaths and pythonpath configurations.
+
+
+[tool.pytest.ini_options]
+addopts = "-s --no-header --no-summary"
+testpaths = [ "tests" ]
+pythonpath = [ "." ]
+
+
+________________
+
+
+Databricks development tools
+There are four main local developer tools Databricks provides: Databricks CLI, Databricks Asset Bundles (or DABs), Databricks connect, and Databricks VS Code extension. 
+Databricks Command-Line Interface (CLI)
+Databricks CLI is a command line interface that allows you to interact with the Databricks platform. It is a very powerful tool with a large range of commands that cover similar functionality as Databricks Terraform modules and APIs.
+Databricks CLI should be used to authenticate towards Databricks from your local machine. So we need to start with installing it. Databricks provides a comprehensive documentation on how to do it on different OS. 
+Databricks CLI provides multiple authentication options. I do not recommend using personal access tokens (from a security perspective, this is not the best option). Instead, use user-to-machine authentication.
+For the workspace-level commands, use the following command to authenticate:
+databricks auth login --host <workspace-url>
+It creates an authentication profile in the .databrickscfg file that contains the profile name and configurations for the profile. It is a good practice to use a user-understandable profile name, so that you can pass -p option when authenticating.
+
+
+[llmops-course]
+host  = https://dbc-1234a567-b8c9.cloud.databricks.com/
+auth_type = databricks-cli
+
+
+The profiles are used to authenticate with Databricks when using developer tools.
+Databricks Asset Bundles
+You may have noticed that the repository contains the databricks.yml file. This is the Databricks Asset Bundle configuration file, which must be located in the root of the bundle project folder. 
+
+
+At its core, Databricks Asset Bundles (DABs) enable you to manage Databricks projects through an infrastructure-as-code (IaC) approach. Using the databricks.yml file, you can define the artifacts and resources your project requires.
+
+
+The minimal asset bundle configuration only contains the bundle name and the target:
+
+
+bundle:
+ name: my_bundle
+
+
+targets:
+ dev:
+   host: <your_host>
+   default: true
+
+
+It’s worth mentioning the artifacts section is where you can specify which packages need to be built as part of the bundle deployment.
+
+* It can run any build command, provided the dependency is installed (for example, uv build).
+* For the whl type, you can set the dynamic_version parameter. If set to true, a dynamic version with a timestamp is created. This is crucial for jobs that use an interactive cluster, as it ensures the cluster uses the latest code changes. This isn't necessary for job clusters or serverless clusters, as they handle this behavior automatically.
+
+
+artifacts:
+ <some-unique-artifact-identifier>:
+   build: string
+   files:
+     - source: string
+   path: string
+   type: string
+   dynamic_version: boolean
+
+
+This is what the bundle and artifacts sections of our databricks.yml file look like:
+
+
+bundle:
+ name: course-code-hub
+
+
+artifacts:
+ default:
+   type: whl
+   build: uv build
+   path: .
+
+
+For now, only the dev target is relevant. It is set as the default, which means it will be used whenever no target is specified when running databricks bundle CLI commands (which we’ll cover next). 
+
+
+targets:
+ dev:
+   default: true
+   mode: development
+   workspace:
+     host: <your host>
+     root_path: /Workspace/Users/${workspace.current_user.userName}/
+                .bundle/${bundle.target}/${bundle.name}
+
+
+It is crucial that the host defined in the target matches the Databricks profile you use to log in to Databricks. If you’ve forked the repository and cloned it to your local machine, make sure to update the host value in the databricks.yml file. Without this change, you won’t be able to run the code examples covered in the following sections.
+
+
+The development mode specified for the target enables the following behaviour:
+* It adds [dev ${workspace.current_user.short_name}] prefix to all resource names and tags each job with a dev Databricks tag.
+* It allows you to override job clusters (which is not allowed in production mode).
+* It pauses all schedules and triggers
+* It enables concurrent runs on all deployed jobs and disables the deployment lock for faster iteration. 
+* The bundle's root path must be under the user's home directory.
+
+
+There are 4 main Databricks CLI commands related to DABs:
+* databricks bundle validate: Checks if your databricks.yml file is configured correctly.
+* databricks bundle deploy: Deploys the resources defined in your databricks.yml file.
+* databricks bundle run <job resource name>: Executes the specified job.
+* databricks bundle destroy: Removes all the assets that were created by the bundle.
+
+
+After the databricks bundle deploy command is executed, all the project files and built artifacts are uploaded to the root_path location specified under target. Here we’ll find:
+* The artifacts folder, which holds the Python wheel files built for the project.
+* The files folder, containing all your project's source files.
+* The state folder, which stores the Terraform state of the bundle.
+
+
+It’s important to pay attention to authentication when using DABs, specifically the evaluation order:
+1. For any command run from the bundle working directory  - the values of fields within a project’s bundle setting files.
+2. The values of environment variables (DATABRICKS_HOST and DATABRICKS_TOKEN).
+3. Configuration profile field values within the .databrickscfg file.
+If you happen to have an environment variable set up, it may mess up with authentication.
+Databricks Connect
+Databricks connect is a Python package that allows you to trigger an execution of spark code on a Databricks cluster from a local environment. 
+We already went through the pyproject.toml setup and uv. From the project folder in a terminal, you can run:
+
+
+uv sync –extra dev
+source .venv/bin/activate (or an alternative command if you use WIndows)
+python 
+
+
+The uv sync command will create a virtual environment, which we activate after. Let’s notice again that we use Python 3.12 and databricks-connect version 17.3.x — to match the runtime. With the Python command, we got into the Python console. Let’s try to run some commands using serverless cluster (an interactive cluster can also be used by providing the cluster ID instead):
+
+
+from databricks.connect import DatabricksSession
+
+
+spark = DatabricksSession.builder.profile(
+    "llmops-course").serverless(True).getOrCreate()
+df = spark.read.table("samples.nyctaxi.trips")
+df.show(5)
+
+
+Spark commands will run on a Databricks cluster.
+
+
+A couple of things to pay attention to here:
+1. You need to choose the correct profile from the .databrickscfg file. If the profile is named DEFAULT, it is not needed.
+2. DatabricksSession will be used to run spark code. If you, for example, run df.toPandas()  -  which may be needed for an ML library you are using, the dataframe will be loaded into your machine’s memory. And if the data is too big, you will get out-of-memory errors.
+
+
+It may be surprising, but it is also possible to import pyspark – even though pyspark is not listed as a dependency of databricks-connect, and uv does not show that pyspark is installed. We can see it if we try to install databricks-connect in a clean virtual environment:
+
+
+ A screenshot of a computer
+
+AI-generated content may be incorrect. 
+
+
+
+
+
+It is because pyspark is “hidden” and embedded into databricks-connect (and that’s why it is a bad idea to list both databricks-connect and pyspark in your project dependencies)
+You can see it by going to .venv/lib/python3.12/site-packages:
+
+
+  
+
+
+
+If we try to use SparkSession instead of DatabricksSession, however, that would not work as it misses necessary context:
+
+
+from pyspark.sql import SparkSession
+
+
+spark = SparkSession.builder.getOrCreate()
+df = spark.read.table("samples.nyctaxi.trips")
+df.show(5)
+
+
+Import works without issues (because pyspark is installed), but when we try to run the second line, we get the RuntimeError: “Only remote Spark sessions using Databricks Connect are supported. Use DatabricksSession.builder to create a remote Spark session instead.” 
+The same command does work in the VS Code extension, however, because the extension automatically injects the required connection details through a .databricks.env file it creates inside the .databricks folder of your project. It contains the following environment variables:
+* DATABRICKS_AUTH_TYPE
+* DATABRICKS_BUNDLE_TARGET
+* DATABRICKS_HOST
+* DATABRICKS_METADATA_SERVICE_URL
+* DATABRICKS_PROJECT_ROOT
+* DATABRICKS_SERVERLESS_COMPUTE_ID
+* PROFILE
+* PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT
+* SPARK_CONNECT_PROGRESS_BAR_ENABLED
+* SPARK_CONNECT_USER_AGENT
+Visual Studio (VS) Code Extension
+ VS Code Extension integrates with all other developer tools: Databricks connect, Databricks Asset Bundles, and Databricks connect, which makes it very easy to connect to the Databricks workspace and execute your code using a Databricks cluster. To install the extension, follow the official documentation.
+We highly recommend installing Python Envy VS Code extension, which will automatically detect the virtual environment based on the file you have opened.
+After the extension is installed, follow these steps:
+1. Run the uv sync –extra dev command to sync dependencies and make sure the virtual environment .venv is created
+2. Select interpreter using Python extension (or it will be automatically selected if Python Envy VS Code extension is installed)
+3. Make sure, databricks.yml file contains the host that matches the host of the profile that was created earlier.
+4. Authenticate using the same profile.
+5. Choose serverless compute option.
+
+
+Let’s create a demo.py file (the same code we tried to run from a terminal) and add the “# Databricks notebook source” so that the code can be recognized as a notebook. The cells are delimited by a line containing “# COMMAND — — — — — “. 
+
+
+ A screenshot of a computer
+
+AI-generated content may be incorrect. 
+
+
+
+This works because the extension created configuration in the .vscode folder (settings.json):
+{     "jupyter.interactiveWindow.cellMarker.codeRegex": 
+      "^# COMMAND ----------|^# Databricks notebook source|^(#\\s*%%|#\\s*\\<codecell\\>|#\\s*In\\[\\d*?\\]|#\\s*In\\[ \\])",
+      "jupyter.interactiveWindow.cellMarker.default":
+      "# COMMAND ----------" }
+We can run the code interactively by clicking Run Cell. 
+However, some code can only run in a Databricks environment. For example, the databricks-feature-engineering package is not supported locally, and some Delta table commands will fail outside Databricks. Secondly, even if you use PySpark for preprocessing, most machine learning libraries require pandas (or sometimes Polars) DataFrames as input for training. Both pandas and Polars compute on a single node, which means that even in a Databricks environment you are not directly leveraging the distributed power of Spark. The advantage, however, is that you can attach your notebook to a larger cluster with more memory. If you run the same code locally, it will use your laptop’s memory, and you can’t easily scale that up.
+Let’s explore how to make notebooks available in the Databricks workspace and execute them there instead.
+The Databricks VS Code extension allows you to sync the entire project to the workspace. After clicking Sync in the Remote Folder tab, the extension runs the databricks sync <folder> /Users/<user_name>/<folder> --watch command in the background. As a result, any local changes are automatically reflected in the workspace without requiring manual synchronization.
+This approach can also be used to make a wheel file for your project available in the workspace. Simply run the uv build command, and the generated wheel will be synced along with the rest of the files (unless the wheel location is added to the .gitignore file).
+It is important to note that the databricks sync command provides one-way synchronization. Changes made directly in the Databricks workspace are not reflected locally, and any subsequent sync will overwrite workspace code.
+Alternatively, you can make the code accessible in the workspace using the Git Folder functionality. After creating a Git Folder, you can authenticate by linking your Git account to Databricks or by using a personal access token from GitHub or another supported version control provider. Git Folders enable bidirectional synchronization, allowing changes made in notebooks to be pushed back to Git (although this may become inconvenient when dealing with merge conflicts). In addition, managing project dependencies through Git Folders can be challenging.
+Finally, you can use the databricks bundle deploy command (make sure to run it from the mlops folder that contains the databricks.yml file) to make all project files available in the workspace together with the built artifact, which is the main advantage of this approach over syncing. However, this method also provides one-way synchronization. Note that using the sync command together with bundle deploy may corrupt the bundle state.
+Running code in a Databricks notebook
+Let’s assume we used the databricks bundle deploy command, and the course notebook becomes available under the files folder in the bundle root in the workspace. To run a Databricks notebook, you need to select a cluster and install the project package. Let’s see how this can be done for serveless compute.
+Using serverless compute
+When using serverless compute, you must first choose an environment before proceeding.
+In our case, we select Environment 4 and install the custom package wheel that was built together with the bundle (available under the bundle root in the artifacts/.internal folder). Notice that we select the usage policy created earlier here so that the costs related to the project development are attributed correctly
+Since selecting an environment is a manual process, developers may forget to choose one. It is possible to configure a default custom base environment for serverless compute to ensures that the correct environment is applied to the project.
+
+
+This environment will be automatically applied to all notebooks when serverless compute is selected. The env_v4.yaml file shown below is uploaded to /Volumes/mlops_dev/utils/envs/:
+environment_version: "4"
+dependencies:
+ - mlflow==3.8.1
+ - numpy==2.4.0
+ - pandas==2.3.0
+ - pyarrow==22.0.0
+ - databricks-sdk==0.85.0
+ - scikit-learn==1.7.0
+ - lightgbm==4.6.0
+ - scipy==1.16.0
+ - pydantic==2.11.7
+
+
+Figure below demonstrates how this environment can be set as the workspace base environment via the Workspace Compute settings (workspace admins have the required permissions to do so). The Compute settings also allow you to configure a default package repository, which is useful when your organization uses JFrog or another private package repository:
+ A screenshot of a computer
+
+AI-generated content may be incorrect. 
+
+
+
+________________
+
+
+Foundation models on Databricks
+Working with foundation models on Databricks gives you flexibility: you can use ready-to-use hosted models, deploy models with provisioned throughput, or connect to external providers like OpenAI or Anthropic. In this section, we'll explore each option, discuss supported model types, and show you how to query them.
+Hosting Options
+Working with foundation models on Databricks gives you significant flexibility. The platform hosts a variety of ready-to-use foundation model APIs, including models like Meta Llama 4, Open AI GPT-5, and Gemini 3 Pro. Beyond these hosted models, you can deploy open-source models through provisioned throughput serving endpoints, or connect to external providers like Azure OpenAI, AWS Bedrock, and Anthropic.
+Regardless of which option you choose, all models use Mosaic AI Model Serving, which follows the OpenAI API specification. It supports three endpoint types:
+* llm/v1/chat (corresponding to the OpenAI Chat Completions API);
+* llm/v1/embeddings (corresponding to the OpenAI Embeddings API);
+* llm/v1/completions (following the legacy OpenAI Completions API). 
+This unified interface lets you query foundation models the same way, regardless of the provider or where the model is hosted. This consistency makes it much easier to experiment with different models, perform evaluations, or enable fallback strategies. You can even use an OpenAI client to interact with foundation models on Databricks. Note that at the time of writing, the responses API is only supported for Databricks-hosted OpenAI closed-sourced foundation models.
+Here is an example of how we can interact with the databricks-gpt-oss-120b model: 
+from databricks.sdk import WorkspaceClient
+from openai import OpenAI
+
+
+w = WorkspaceClient()
+host = w.config.host
+token = w.tokens.create(lifetime_seconds=1200).token_value
+
+
+client = OpenAI(
+   api_key=token,
+   base_url=f"{host}/serving-endpoints"
+)
+
+
+response = client.chat.completions.create(
+   model="databricks-gpt-oss-120b",
+   messages=[
+       {"role": "user",
+        "content": "What is MLOps?"}
+   ]
+)
+Another benefit of using foundation models on Databricks is the AI Gateway. Gateway can be applied to any Mosaic AI Model Serving endpoint, including foundation model APIs. You can also enable AI Guardrails to ensure personally identifiable information (PII) data is deleted or masked and harmful content is blocked, for both model input and output.
+ A diagram of a software flowchart
+
+AI-generated content may be incorrect. 
+
+Foundation model APIs can also be used in batch mode using ai_query (see the Databricks documentation on AI functions). Some Databricks-hosted models are optimized for batch processing, but ai_query works for any endpoint deployed through Mosaic AI model serving.
+As mentioned earlier, Databricks offers three hosting options for foundation models, let’s discuss them in detail.
+Databricks-hosted (Pay-per-Token)
+These models are ideal for experimentation and exploration as they require no additional configuration or upfront infrastructure commitment. Model availability in your workspace depends on your cloud provider and region (see AWS and Azure documentation for details). However, they are subject to workspace-level rate limits in input/output tokens and queries per hour. The most restrictive rate limit applies at any given time; if reached, you will receive a 429 error until the window resets. 
+Provisioned Throughput
+Recommended for production, these endpoints provide performance guarantees. You can deploy models behind provisioned throughput endpoints directly from the system.ai schema. You can also bring your own model (perhaps one you've fine-tuned) from sources like Hugging Face. For the latter approach, you'll need to log the model using MLflow (using the transformers flavor) and register it in Unity Catalog. It’s important to note that provisioned throughput works only for selected foundation model families and for specific runtime configurations (size and context window) that Databricks has tuned and supports. You can find supported models in this documentation. If you choose to bring your own model and its metadata falls outside supported ranges, the provisioned throughput endpoint creation will fail (source). 
+Measuring Capacity: Tokens per Second
+For some models, provisioned throughput is expressed in tokens per second (input and output tokens combined), rather than requests per second. Since LLM requests vary widely in token lengths, requests per second is no longer a reliable measure of capacity. For example, if a request requires 2048 input tokens and 256 output tokens (2304 tokens total), a provisioned throughput of 2304 tokens per second allows the endpoint to process one such request per second. If you increase this to 4608 tokens per second, the endpoint can process two such requests per second, with each request still taking roughly one second to complete.
+Autoscaling and Performance
+Limits for provisioned throughput endpoints can be configured much higher than those for Databricks-hosted foundation models, and autoscaling adjusts capacity dynamically based on application demand. 
+For example, consider the meta_llama_v3_1_8b_instruct model: 
+* Its minimum band size is 9,500 tokens per second, which corresponds to four provisioned concurrency units.
+* If the system detects a demand of 15,000 tokens per second while operating at four units, it will scale up to eight units.
+* This increases the available throughput to approximately 19,000 tokens per second to meet the higher load.
+Optimizing LLM inference performance is not an easy task, and GPU autoscaling is slower than CPU autoscaling for regular model serving endpoints.  Databricks recommends conducting benchmarking to choose the correct range of tokens per second. It is possible to scale the endpoint to 0 to avoid unnecessary costs, but it is not recommended for production environments.
+For other models, provisioned throughput is expressed in model units, which is an abstraction layer on top of tokens per second.  For the Llama 4 Maverick model, for example, 50 model units means approximately 3250 tokens per second.
+External models
+External models are hosted outside of Databricks, which means you may need to configure firewall rules to access them (AWS). Various providers are supported, and you can also use custom providers as long as their APIs are OpenAI-compatible. 
+Even though you could access external models directly from the agent logic (given that the secrets are configured and the networking is resolved), creating a serving endpoint that accesses an external model is a good idea because of the benefits mentioned above, specifically around governance.
+The custom provider option can also be used when you need to use functionality, such as those offered by OpenAI, that are not yet covered by out-of-the-box solutions. For instance, while Databricks’ existing OpenAI external model serving options currently support text and image inputs with text-only outputs, the “Custom Provider” solution enables support for image as output (encoded as base64) use cases through Databricks. Solution architects from Databricks Sara Dooley and Austin Zaccor wrote a blog explaining how to achieve it.
+Types of foundation models
+Foundation models on Databricks are categorized into four functional types to help you select the most effective tool for your specific application:
+* General purpose: These models are fine-tuned on large datasets of human dialogue, which enables them to generate contextually relevant responses in multi-turn conversations. They are ideal for use cases such as customer support, virtual assistants, interactive tutoring systems. 
+* Embedding: These  models transform complex data, such as text, images, or audio, into embeddings that capture the essential features and relationships within the data. They are recommended for applications that require semantic understanding, similarity comparison, and efficient retrieval or clustering of complex data.
+* Vision: Designed to analyze visual data, these models are used for object recognition and image classification. Note that while they accept image inputs, standard configurations typically produce text outputs unless using a Custom Provider setup.
+* Reasoning: These models excel at breaking down complex tasks, and explaining their decision-making process. They are best suited for  content creation, summarization, and agent orchestration.
+Figure below demonstrates an overview of available models per type and hosting option (not all models are available in all regions, and some models may get retired, and new ones may become available).
+ A screenshot of a computer screen
+
+AI-generated content may be incorrect.
