@@ -12,7 +12,7 @@ GENIE_SPACE_ID = "01f12d5f438713899fcb6ee851206636"
 LLM_ENDPOINT = "course_LLM"
 
 
-def test_genie(w: WorkspaceClient) -> bool:
+def check_genie(w: WorkspaceClient) -> bool:
     """Start a Genie conversation and send a simple question."""
     print("=" * 60)
     print("TEST 1: Genie Space")
@@ -31,7 +31,7 @@ def test_genie(w: WorkspaceClient) -> bool:
         return False
 
 
-def test_llm_endpoint(w: WorkspaceClient) -> bool:
+def check_llm_endpoint(w: WorkspaceClient) -> bool:
     """Send a short chat-completion request to the serving endpoint."""
     print("=" * 60)
     print("TEST 2: LLM Serving Endpoint (course_LLM)")
@@ -71,8 +71,8 @@ def main() -> None:
     print(f"Workspace host: {w.config.host}\n")
 
     results = [
-        test_genie(w),
-        test_llm_endpoint(w),
+        check_genie(w),
+        check_llm_endpoint(w),
     ]
 
     print("=" * 60)
