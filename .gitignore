@@ -95,3 +95,8 @@ dmypy.json
 # VS code configuration
 .vscode
 .history
+.cursor/
+
+# EDA agent local traces
+tracing/
+!tracing/.gitkeep
