@@ -1,0 +1,38 @@
+resources:
+  jobs:
+    eda_agent_job:
+      name: eda-agent-${bundle.target}
+      tags:
+        project_name: "llmops-databricks-course-HeJun-C"
+        env: ${bundle.target}
+
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - ../dist/*.whl
+
+      parameters:
+        - name: question
+          default: "What is the overall churn rate in the train table?"
+        - name: output_catalog
+          default: "mlops_dev"
+        - name: output_schema
+          default: "chenheju"
+        - name: output_table
+          default: "eda_agent_runs"
+
+      tasks:
+        - task_key: run_eda_agent
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/run_agent_job.py
+            base_parameters:
+              env: ${bundle.target}
+              git_sha: "${var.git_sha}"
+              run_id: "{{job.run_id}}"
+              question: "{{job.parameters.question}}"
+              output_catalog: "{{job.parameters.output_catalog}}"
+              output_schema: "{{job.parameters.output_schema}}"
+              output_table: "{{job.parameters.output_table}}"

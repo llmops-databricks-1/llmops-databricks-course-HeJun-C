@@ -40,7 +40,10 @@ CATALOG = "mlops_dev"
 SCHEMA = "chenheju"
 VS_ENDPOINT = "llmops_course_vs_endpoint"
 VS_INDEX = f"{CATALOG}.{SCHEMA}.metadata_knowledge_index"
-DATABRICKS_PROFILE = "llmops-course"
+DATABRICKS_PROFILE = os.environ.get("DATABRICKS_PROFILE", "llmops-course")
+# When running inside a Databricks job/cluster, auth comes from the runtime
+# (env vars, SPN), not from a ``.databrickscfg`` profile.
+_ON_DATABRICKS = bool(os.environ.get("DATABRICKS_RUNTIME_VERSION"))
 MAX_PYTHON_RETRIES = 3
 
 SKILLS_DIR = Path(__file__).parent / "skills"
@@ -93,17 +96,27 @@ class EDAAgent:
         self._emit("init", "Resolving Databricks credentials...")
         token = self._resolve_token()
         self._llm = OpenAI(base_url=LLM_BASE_URL, api_key=token)
-        self._genie = GenieClient(GENIE_SPACE_ID, profile=DATABRICKS_PROFILE)
-        self._ws = WorkspaceClient(profile=DATABRICKS_PROFILE)
+
+        profile = None if _ON_DATABRICKS else DATABRICKS_PROFILE
+        self._genie = GenieClient(GENIE_SPACE_ID, profile=profile)
+        ws_kwargs: dict[str, str] = {}
+        if profile:
+            ws_kwargs["profile"] = profile
+        self._ws = WorkspaceClient(**ws_kwargs)
+
         self._emit("init", "Connecting to Databricks (Spark)...")
-        self._spark = (
-            DatabricksSession.builder.profile(DATABRICKS_PROFILE)
-            .serverless(True)
-            .getOrCreate()
-        )
+        if _ON_DATABRICKS:
+            self._spark = DatabricksSession.builder.getOrCreate()
+        else:
+            self._spark = (
+                DatabricksSession.builder.profile(DATABRICKS_PROFILE)
+                .serverless(True)
+                .getOrCreate()
+            )
 
         self.memory: LakebaseMemory | None = None
-        if lakebase_host and lakebase_instance:
+        enable_lakebase = os.environ.get("ENABLE_LAKEBASE") == "1"
+        if enable_lakebase and lakebase_host and lakebase_instance:
             self._emit("init", "Connecting to Lakebase memory...")
             self.memory = LakebaseMemory(
                 host=lakebase_host,
@@ -689,11 +702,11 @@ class EDAAgent:
             return token
         from databricks.sdk.core import Config
 
-        cfg = Config(profile=DATABRICKS_PROFILE)
+        cfg = Config() if _ON_DATABRICKS else Config(profile=DATABRICKS_PROFILE)
         if cfg.token:
             return cfg.token
-        # Handles OAuth / databricks-cli auth types: call authenticate()
-        # which returns {"Authorization": "Bearer <token>"}.
+        # Handles OAuth / SPN / databricks-cli: ``authenticate()`` returns
+        # ``{"Authorization": "Bearer <token>"}``.
         try:
             headers = cfg.authenticate()
             bearer = headers.get("Authorization", "")
@@ -702,9 +715,9 @@ class EDAAgent:
         except Exception:
             pass
         raise RuntimeError(
-            "Cannot resolve Databricks token. Set DATABRICKS_TOKEN or "
-            f"configure profile '{DATABRICKS_PROFILE}' in "
-            "~/.databrickscfg."
+            "Cannot resolve Databricks token. Set DATABRICKS_TOKEN, "
+            f"run inside a Databricks job, or configure profile "
+            f"'{DATABRICKS_PROFILE}' in ~/.databrickscfg."
         )
 
 
